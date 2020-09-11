@@ -1,1 +1,4 @@
 bin
+# .go-build is stored at the root of the project in order to speed up containerized builds.
+# make clean will remote .go-build
+.go-build
