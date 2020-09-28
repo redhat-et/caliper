@@ -19,7 +19,7 @@ ROOTDIR := $(shell pwd)
 OUTDIR := $(ROOTDIR)/bin
 
 SERVER = "github.com/copejon/prometheus-query/src/cmd"
-APP= "prom-ag"
+APP= "app"
 
 GOOS = linux
 GOARCH = amd64
