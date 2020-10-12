@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,74 +26,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
 	"github.com/copejon/prometheus-query/cmd/queries"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
-
-const (
-	promNamespace = `openshift-monitoring`
-	promRoute     = `prometheus-k8s`
-)
-
-func main() {
-	defer klog.Flush()
-
-	klog.Info("initializing openshift client")
-	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		klog.Fatal(err)
-	}
-
-	if ! hasBearerToken(cfg) {
-		klog.Error("error: bearer token not found, required to prometheus oauth access.  login to cluster with 'oc'")
-		os.Exit(1)
-	}
-
-	rc := routeClient.NewForConfigOrDie(cfg)
-
-	klog.Infof("fetching prometheus route")
-	route, err := rc.Routes(promNamespace).Get(context.Background(), promRoute, metav1.GetOptions{})
-	if err != nil {
-		klog.Fatal(err)
-	}
-
-	transport, err := rest.TransportFor(cfg)
-	if err != nil {
-		klog.Fatal(err)
-	}
-
-	host := prometheusHost(route)
-	klog.Infof("initializing connection for host: %s", host)
-	conn, err := promapi.NewClient(promapi.Config{
-		Address:      host,
-		RoundTripper: transport,
-	})
-
-	pc := promv1.NewAPI(conn)
-	if err != nil {
-		klog.Fatal(err)
-	}
-
-	klog.Info("creating prometheus api client")
-
-	top, err := queries.NewTopQuery(queries.QueryConfig{
-		QueryType: queries.T_INSTANT,
-		PrometheusClient: pc,
-		Output:    "json",
-	})
-	if err != nil {
-		klog.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := top.ExecuteQuery(ctx)
-	klog.Info(result)
-}
 
 func hasBearerToken(cfg *rest.Config) bool {
 	if len(cfg.BearerToken) == 0 && len(cfg.BearerTokenFile) == 0 {
@@ -105,4 +43,63 @@ func hasBearerToken(cfg *rest.Config) bool {
 
 func prometheusHost(r *routev1.Route) string {
 	return fmt.Sprintf("https://%s", r.Spec.Host)
+}
+
+const (
+	promNamespace = `openshift-monitoring`
+	promRoute     = `prometheus-k8s`
+)
+
+func main() {
+	defer klog.Flush()
+
+	klog.Infof("initializing openshift client from KUBECONFIG=%s", kubeconfig)
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		klog.Exit(err)
+	}
+
+	if !hasBearerToken(cfg) {
+		klog.Exit("error: bearer token not found, required access to prometheus oauth access.  login to cluster with 'oc'")
+	}
+
+	rc := routeClient.NewForConfigOrDie(cfg)
+
+	klog.Infof("fetching prometheus route")
+	route, err := rc.Routes(promNamespace).Get(context.Background(), promRoute, metav1.GetOptions{})
+	if err != nil {
+		klog.Exit(err)
+	}
+
+	transport, err := rest.TransportFor(cfg)
+	if err != nil {
+		klog.Exit(err)
+	}
+
+	host := prometheusHost(route)
+	klog.Infof("initializing connection for host: %s", host)
+	conn, err := promapi.NewClient(promapi.Config{
+		Address:      host,
+		RoundTripper: transport,
+	})
+
+	klog.Info("creating prometheus api client")
+	pc := promv1.NewAPI(conn)
+	if err != nil {
+		klog.Exit(err)
+	}
+
+	top, err := queries.NewTopQuery(queries.QueryConfig{
+		QueryType:        queryType,
+		PrometheusClient: pc,
+		Output:           "json",
+	})
+	if err != nil {
+		klog.Exit(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := top.ExecuteQuery(ctx)
+	klog.Info(result)
 }

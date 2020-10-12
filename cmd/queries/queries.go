@@ -21,30 +21,27 @@ Net Send |___________|_____|________|
 Net Rcv  |___________|_____|________|
 */
 
-type queryType int
-
 const (
-	T_INSTANT queryType = iota
-	T_QUANTILE
-	T_AVERAGE
+	T_INSTANT  string = "i"
+	T_QUANTILE string = "q"
+	T_AVERAGE  string = "a"
 )
 
 type QueryConfig struct {
-	QueryType        queryType `json:"queryType"`
-	PrometheusClient v1.API    `json:"prometheusClient"`
-	Output           string    `json:"output"`
+	QueryType        string `json:"queryType"`
+	PrometheusClient v1.API `json:"prometheusClient"`
+	Output           string `json:"output"`
 }
 
 type metricQuery struct {
-	Metric      string      `json:"metric"`
-	QueryString string      `json:"query"`
-
+	Metric      string `json:"metric"`
+	QueryString string `json:"query"`
 }
 
 type QueryResult struct {
-	Value       model.Value `json:"value"`
-	Warnings    v1.Warnings `json:"warnings"`
-	Errs        error       `json:"errs"`
+	Value    model.Value `json:"value"`
+	Warnings v1.Warnings `json:"warnings"`
+	Errs     error       `json:"errs"`
 }
 
 type Top struct {
@@ -61,8 +58,9 @@ func (t Top) String() string {
 }
 
 const (
-	quantileOverTimeTemplate string = `quantile_over_time({{.95}}, {{.Metric}}[{{.Range}})]`
-	avgOverTimeTemplate      string = `avg_over_time({{.Metric}}[{{.Range}}])`
+	// TODO range values currently hardcoded to 10min, eventually will be flag configurable
+	quantileOverTimeTemplate string = `quantile_over_time(.95, {{.Metric}}[10m])`
+	avgOverTimeTemplate      string = `avg_over_time({{.Metric}}[10m])`
 	instantTemplate          string = `{{.Metric}}`
 )
 
@@ -86,12 +84,13 @@ func generateMetricQueriesTemplate(query string) ([]*metricQuery, error) {
 	return mqs, nil
 }
 
-
 func newMetricQuery(metric, q string) (*metricQuery, error) {
 	var queryConfig = struct {
 		Metric string
+		Range  string
 	}{
 		metric,
+		"10m",
 	}
 	t, err := template.New("metricQuery").Parse(q)
 	if err != nil {
@@ -110,7 +109,6 @@ func newMetricQuery(metric, q string) (*metricQuery, error) {
 	}, nil
 }
 
-
 func NewTopQuery(cfg QueryConfig) (*Top, error) {
 	var queryTemplate string
 	switch cfg.QueryType {
@@ -121,7 +119,7 @@ func NewTopQuery(cfg QueryConfig) (*Top, error) {
 	case T_AVERAGE:
 		queryTemplate = avgOverTimeTemplate
 	default:
-		return nil, fmt.Errorf("unsupported QueryString selector: %d", cfg.QueryType)
+		return nil, fmt.Errorf("unsupported QueryString selector: %s", cfg.QueryType)
 	}
 	qs, err := generateMetricQueriesTemplate(queryTemplate)
 	if err != nil {
