@@ -18,23 +18,21 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"github.com/copejon/prometheus-query/cmd/queries"
-	"github.com/spf13/pflag"
-	"k8s.io/client-go/rest"
 	"os"
 	"time"
 
-	promapi "github.com/prometheus/client_golang/api"
-	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	apiroute "github.com/openshift/api/route/v1"
-	routev1 "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
+	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
+	routev1 "github.com/openshift/api/route/v1"
+
+	"github.com/copejon/prometheus-query/cmd/queries"
+	promapi "github.com/prometheus/client_golang/api"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
 const (
@@ -48,8 +46,7 @@ func main() {
 	klog.Info("initializing openshift client")
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		klog.Error(err)
-		os.Exit(1)
+		klog.Fatal(err)
 	}
 
 	if ! hasBearerToken(cfg) {
@@ -57,19 +54,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	rc := routev1.NewForConfigOrDie(cfg)
+	rc := routeClient.NewForConfigOrDie(cfg)
 
 	klog.Infof("fetching prometheus route")
 	route, err := rc.Routes(promNamespace).Get(context.Background(), promRoute, metav1.GetOptions{})
 	if err != nil {
-		klog.Error(err)
-		os.Exit(1)
+		klog.Fatal(err)
 	}
 
 	transport, err := rest.TransportFor(cfg)
 	if err != nil {
-		klog.Error(err)
-		os.Exit(1)
+		klog.Fatal(err)
 	}
 
 	host := prometheusHost(route)
@@ -81,17 +76,24 @@ func main() {
 
 	pc := promv1.NewAPI(conn)
 	if err != nil {
-		klog.Error(err)
-		os.Exit(1)
+		klog.Fatal(err)
 	}
 
 	klog.Info("creating prometheus api client")
+
+	top, err := queries.NewTopQuery(queries.QueryConfig{
+		QueryType: queries.T_INSTANT,
+		PrometheusClient: pc,
+		Output:    "json",
+	})
+	if err != nil {
+		klog.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	results := queries.DoQuery(pc, ctx)
-	out, _ := json.MarshalIndent(results, "", "  ")
-	klog.Infof("%s", string(out))
+	result, err := top.ExecuteQuery(ctx)
+	klog.Info(result)
 }
 
 func hasBearerToken(cfg *rest.Config) bool {
@@ -101,17 +103,6 @@ func hasBearerToken(cfg *rest.Config) bool {
 	return true
 }
 
-func prometheusHost(r *apiroute.Route) string {
+func prometheusHost(r *routev1.Route) string {
 	return fmt.Sprintf("https://%s", r.Spec.Host)
-}
-
-const kubeconfigEnv = "KUBECONFIG"
-
-var kubeconfig string
-
-func init() {
-
-	kubeconfig = os.Getenv(kubeconfigEnv)
-	pflag.StringVarP(&kubeconfig, "kubeconfig", "", kubeconfig, "path to kubeconfig file")
-	pflag.Parse()
 }
