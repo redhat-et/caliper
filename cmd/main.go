@@ -92,7 +92,6 @@ func main() {
 	top, err := queries.NewTopQuery(queries.QueryConfig{
 		QueryType:        queryType,
 		PrometheusClient: pc,
-		Output:           "json",
 	})
 	if err != nil {
 		klog.Exit(err)
