@@ -65,9 +65,9 @@ const (
 )
 
 var targetMetrics = []string{
-	"pod:container_cpu_usage",
-	"pod:container_memory_working_set_bytes",
-	"container_fs_usage_bytes",
+	"pod:container_cpu_usage", // as a percentage
+	"pod:container_memory_usage_bytes:sum", // as Mib
+	"container_fs_usage_bytes", // as Mib
 	"container_network_receive_bytes_total",
 	"container_network_transmit_bytes_total",
 }
