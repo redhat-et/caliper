@@ -19,8 +19,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -29,7 +27,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
-	"github.com/copejon/prometheus-query/cmd/queries"
+	"github.com/copejon/prometheus-query/cmd/top"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
@@ -89,16 +87,11 @@ func main() {
 		klog.Exit(err)
 	}
 
-	top, err := queries.NewTopQuery(queries.QueryConfig{
+	out, err := top.Top(top.Config{
 		QueryType:        queryType,
 		PrometheusClient: pc,
 	})
-	if err != nil {
-		klog.Exit(err)
+	for _, o := range out {
+		klog.Infof("%+v\n", o)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	result, err := top.ExecuteQuery(ctx)
-	klog.Info(result)
 }
