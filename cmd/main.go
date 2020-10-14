@@ -27,7 +27,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
-	"github.com/copejon/prometheus-query/cmd/top"
+	"github.com/copejon/prometheus-query/pkg/top"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )

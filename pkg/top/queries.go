@@ -175,7 +175,7 @@ const defaultRange = "10m"
 
 // Top executes the specified query against targetMetrics and returns a slice of Prometheus InstantVertices.  An
 // instantVertex is a point-in-time data structure containing the metric values for all reporting components.  Thus,
-// Top is not intended for continuous monitoring. See
+// Top is not intended for continuous monitoring. See TODO
 func Top(cfg Config) ([]*queryResult, error) {
 	if cfg.Range == "" {
 		cfg.Range = defaultRange
