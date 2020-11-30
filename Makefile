@@ -18,24 +18,23 @@ SHELL = /usr/bin/env bash
 ROOTDIR := $(shell pwd)
 OUTDIR := $(ROOTDIR)/bin
 
-SERVER = "github.com/copejon/prometheus-query/src/cmd"
-APP= "app"
+APP = prom-top
 
 GOOS = linux
 GOARCH = amd64
 
-BUILD_IMG=registry.redhat.io/ubi8/go-toolset:1.13.4
+BUILD_IMG = registry.redhat.io/ubi8/go-toolset:1.13.4
 
 .PHONY: all build
 all: build
 
 build: ./cmd
 	[ -d $(OUTDIR) ] || mkdir -p $(OUTDIR)
-	docker run -e GOOS=$(GOOS) -e GOARCH=$(GOARCH) --rm -v $(shell pwd):/opt/app-root/src/$(APP) -w /opt/app-root/src/app/ $(BUILD_IMG) ./hack/build.sh
-
-.PHONY: build_server
-build_image: build/Dockerfile
-	docker build -t localhost/$(APP) --file=server.Dockerfile .
+	docker run \
+	-e GOOS="$(GOOS)" -e GOARCH="$(GOARCH)" --rm \
+	-v "$(ROOTDIR)":/opt/app-root/src/"$(APP)" \
+	-w /opt/app-root/src/"$(APP)"/ \
+	"$(BUILD_IMG)" go build
 
 .PHONY: clean
 clean:

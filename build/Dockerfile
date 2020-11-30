@@ -16,15 +16,16 @@ FROM registry.redhat.io/ubi8/go-toolset:1.13.4 AS build
 
 ENV GOPATH=/opt/app-root/
 
-WORKDIR $GOPATH/src/prometheus-query
+WORKDIR $GOPATH/src/prom-top
 
-COPY --chown=1001:1 .. .
+# mount the repo root to work dir
+COPY --chown=1001:1 . .
 
-RUN GOCACHE=/tmp/.cache GOOS=linux GOARCH=amd64 go build -o ./bin/app ./cmd
+RUN GOCACHE=/tmp/.cache GOOS=linux GOARCH=amd64 go build -o ./bin/prom-top ./cmd
 
 # Run container image
 FROM registry.redhat.io/ubi8/ubi-minimal:8.2
 
-COPY --from=build ./opt/app-root/src/prometheus-query/bin/app /usr/local/bin/app
+COPY --from=build ./opt/app-root/src/prom-top/bin/prom-top /usr/local/bin/prom-top
 
-ENTRYPOINT ["app"]
+ENTRYPOINT ["prom-top"]
