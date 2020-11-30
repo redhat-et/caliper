@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -27,9 +28,10 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
-	"github.com/copejon/prometheus-query/pkg/top"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+
+	"github.com/copejon/prometheus-query/pkg/top"
 )
 
 func hasBearerToken(cfg *rest.Config) bool {
@@ -85,12 +87,22 @@ func main() {
 	pc := promv1.NewAPI(conn)
 	handleError(err)
 
-	out, err := top.Top(top.Config{
+	result, err := top.Top(top.Config{
 		QueryType:        queryType,
 		PrometheusClient: pc,
+		Range:            span,
 	})
 	handleError(err)
-	for _, o := range out {
-		klog.Infof("%+v\n", o)
+
+	for _, qr := range result {
+		if outFormat == "csv" {
+			out, err := qr.MarshalCSV()
+			if err != nil {
+				klog.Fatal(err)
+			}
+			fmt.Println(string(out))
+		} else {
+			fmt.Println(qr.String())
+		}
 	}
 }

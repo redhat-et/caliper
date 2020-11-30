@@ -5,7 +5,6 @@ go 1.14
 require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
-	github.com/jedib0t/go-pretty/v6 v6.0.5
 	github.com/openshift/api v0.0.0-20200917102736-0a191b5b9bb0
 	github.com/openshift/client-go v0.0.0-20200521150516-05eb9880269c
 	github.com/prometheus/client_golang v1.7.1

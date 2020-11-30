@@ -27,28 +27,41 @@ const kubeconfigEnv = "KUBECONFIG"
 var (
 	kubeconfig string
 	queryType  string
-	//span       string
-	//output     string
+	span       string
+	outFormat  string
 )
 
-func init() {
-	home, _ := os.UserHomeDir()
-	kubeconfigDefault := filepath.Join(home, `/.kube/config`)
-	queryTypeDefault := "q" // 95th quantile
+const spanHelp = `The span of time over which metrics are collected, starting from Now - span until Now
+Input must adhere to Prometheus time format where time is an int and time unit is a single
+character.
+  Time units are:
+    ms milliseconds
+    s = seconds
+    m = minutes
+    h = hours
+    d = days
+    w = weeks
+    m = months
+    y = years
+The time format concatenates the int and unit: ##unit, e.g. 10 minutes == 10m`
 
-	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "path to kubeconfig file")
-	pflag.StringVarP(&queryType, "type", "t", queryTypeDefault,
-		`Designate the query type to execute
+const queryHelp = `Designate the query type to execute
 One of:
 	"i"  most recent, instantaneous metric values
 	"q"  95th quantile from last 10min of metric values
 	"a"  average from the last 10min of metric values
 Example:
-	$ prom-top -t i # query instant vectors
-`,
-	)
-	//pflag.StringVar(&span, "span", "", "the span from now back in time to compute")
-	//pflag.StringVarP(&output, "output", "o", "pretty", "format to print data to stdout [ json | pretty ]")
+	$ prom-top -t i # query instant vectors`
+
+func init() {
+	home, _ := os.UserHomeDir()
+	kubeconfigDefault := filepath.Join(home, `.kube/config`)
+	queryTypeDefault := "q" // 95th quantile
+
+	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "Path to kubeconfig file")
+	pflag.StringVarP(&queryType, "type", "t", queryTypeDefault, queryHelp)
+	pflag.StringVar(&span, "span", "", spanHelp)
+	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw]")
 	pflag.Parse()
 
 	// If kubeconfig env var was set and no kubeconfig was provided via flag, use

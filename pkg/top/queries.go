@@ -39,6 +39,7 @@ package top
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"fmt"
 	"text/template"
 	"time"
@@ -47,32 +48,22 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-const (
-	//T_INSTANT toggles the an instant vector query
-	T_INSTANT string = "i"
-	//T_QUANTILE toggles the 95%ile over time query
-	T_QUANTILE string = "q"
-	// T_AVERAGE toggles the average over time query
-	T_AVERAGE string = "a"
-)
-
 type Config struct {
 	Context context.Context
 	// QueryType must specify the query to be executed, defaults to Instant
 	QueryType string `json:"queryType"`
 	// Range (optional) defines a span of time from (time.Now() - Range) until time.Now()
 	// Ignored by Instant query.
-	// Input must adhere to Prometheus time format where time is an int and time unit is a single
-	// character.
+	// Input must adhere to Prometheus time format where time is an int and time unit is a single character.
 	// Time units are
-	// ms milliseconds
-	// s = seconds
-	// m = minutes
-	// h = hours
-	// d = days
-	// w = weeks
-	// m = months
-	// y = years
+	//   ms milliseconds
+	//   s = seconds
+	//   m = minutes
+	//   h = hours
+	//   d = days
+	//   w = weeks
+	//   m = months
+	//   y = years
 	// The time format concatenates the int and unit: ##unit, e.g. 10 minutes == 10m
 	Range string `json:"range,omitempty"`
 	// PrometheusClient must be an initialized prometheus client
@@ -82,11 +73,11 @@ type Config struct {
 // targetMetrics specify the metric to be queried.  These values are processed by generateQueryList()
 // to generated the query string
 var targetMetrics = []string{
-	"pod:container_cpu_usage", // as a percentage
-	"pod:container_memory_usage_bytes:sum",
-	"container_fs_usage_bytes",
-	"container_network_receive_bytes_total",
-	"container_network_transmit_bytes_total",
+	"pod:container_cpu_usage:sum",
+	//"pod:container_memory_usage_bytes:sum",
+	//"container_fs_usage_bytes",
+	//"container_network_receive_bytes_total",
+	//"container_network_transmit_bytes_total",
 }
 
 // Querie Templates
@@ -101,6 +92,15 @@ const (
 	quantileOverTimeTemplate string = `quantile_over_time(.95, {{.Metric}}[{{.Range}}])`
 	avgOverTimeTemplate      string = `avg_over_time({{.Metric}}[{{.Range}}])`
 	instantTemplate          string = `{{.Metric}}`
+)
+
+const (
+	//T_INSTANT toggles an instant vector query
+	T_INSTANT string = "i"
+	//T_QUANTILE toggles the 95%ile over time query
+	T_QUANTILE string = "q"
+	// T_AVERAGE toggles the average over time query
+	T_AVERAGE string = "a"
 )
 
 func selectQueryTemplate(q string) (t string, err error) {
@@ -135,34 +135,67 @@ func generateTargetMetricQueries(cfg Config) ([]string, error) {
 			tm, cfg.Range,
 		})
 		if err != nil {
-
+			return nil, fmt.Errorf("failed to generate query: %v", err)
 		}
 		queries = append(queries, buf.String())
 	}
 	return queries, nil
 }
 
-type queryResult struct {
-	Query    string      `json:"query"`
-	Value    model.Value `json:"value"`
+func sampleCSVRecord(s *model.Sample) []string {
+	return []string{
+		string(s.Metric[model.LabelName("namespace")]),
+		string(s.Metric[model.LabelName("pod")]),
+		s.Value.String(),
+		s.Timestamp.String(),
+	}
+}
+
+type QueryResult struct {
+	Query string `json:"query"`
+	model.Value
 	Warnings v1.Warnings `json:"warnings,omitempty"`
 }
 
-func top(cfg Config) ([]*queryResult, error) {
+var header = []string{"namespace", "pod", "value", "time"}
+
+func (q QueryResult) MarshalCSV() ([]byte, error) {
+	v, ok := q.Value.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("expected model.Vector")
+	}
+
+	buf := new(bytes.Buffer)
+	wtr := csv.NewWriter(buf)
+	err := wtr.Write(header)
+	if err != nil {
+		return nil, fmt.Errorf("error writing header: %v", err)
+	}
+	for _, s := range v {
+		err = wtr.Write(sampleCSVRecord(s))
+		if err != nil {
+			return nil, fmt.Errorf("error writing csv entry: %v", err)
+		}
+	}
+	wtr.Flush()
+	return buf.Bytes(), nil
+}
+
+func top(cfg Config) ([]*QueryResult, error) {
 	queries, err := generateTargetMetricQueries(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	results := make([]*queryResult, 0, len(queries))
-	// Must snapshot the current time to ensure all queries are executed in the same span.
+	results := make([]*QueryResult, 0, len(queries))
+	// Must snapshot the current time to normalize the endpoint of ranged queries
 	now := time.Now()
 	for _, q := range queries {
 		val, w, err := cfg.PrometheusClient.Query(cfg.Context, q, now)
 		if err != nil {
 			return nil, fmt.Errorf("query %q failed: %v", q, err)
 		}
-		results = append(results, &queryResult{
+		results = append(results, &QueryResult{
 			Query:    q,
 			Value:    val,
 			Warnings: w,
@@ -176,7 +209,7 @@ const defaultRange = "10m"
 // Top executes the specified query against targetMetrics and returns a slice of Prometheus InstantVertices.  An
 // instantVertex is a point-in-time data structure containing the metric values for all reporting components.  Thus,
 // Top is not intended for continuous monitoring. See TODO
-func Top(cfg Config) ([]*queryResult, error) {
+func Top(cfg Config) ([]*QueryResult, error) {
 	if cfg.Range == "" {
 		cfg.Range = defaultRange
 	}
