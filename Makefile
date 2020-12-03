@@ -18,8 +18,6 @@ SHELL = /usr/bin/env bash
 ROOTDIR := $(shell pwd)
 OUTDIR := $(ROOTDIR)/bin
 
-APP = prom-top
-
 GOOS = linux
 GOARCH = amd64
 
@@ -28,15 +26,11 @@ BUILD_IMG = registry.redhat.io/ubi8/go-toolset:1.13.4
 .PHONY: all build
 all: build
 
-build: ./cmd
-	[ -d $(OUTDIR) ] || mkdir -p $(OUTDIR)
-	docker run \
-	-e GOOS="$(GOOS)" -e GOARCH="$(GOARCH)" --rm \
-	-v "$(ROOTDIR)":/opt/app-root/src/"$(APP)" \
-	-w /opt/app-root/src/"$(APP)"/ \
-	"$(BUILD_IMG)" go build
+build: ./cmd/prom-top ./cmd/plotter
+	go build -o ./bin/prom-top ./cmd/prom-top/*.go
+	go build -o ./bin/plotter ./cmd/plotter/*.go
 
 .PHONY: clean
 clean:
 	GOCACHE="$(ROOTDIR)" go clean -cache
-	rm "$(OUTDIR)/$(APP)"
+	rm -r $(ROOTDIR)/bin/*

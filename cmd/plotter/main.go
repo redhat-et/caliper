@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	_ "github.com/jackc/pgx/stdlib"
@@ -43,13 +45,16 @@ func (c config) ToDSN() string {
 }
 
 func main() {
-
-	viper.SetConfigName(".env")
-	viper.SetConfigType("envfile")
+	base, _ := os.Executable()
+	viper.SetConfigFile(filepath.Join(filepath.Dir(base), ".env"))
+	viper.SetConfigType("dotenv")
 	err := viper.ReadInConfig()
 	if err != nil {
 		log.Fatalf("read config file err: %v", err)
 	}
+
+	host := os.Getenv(PGHOST)
+	log.Printf("host: %s", host)
 
 	cfg := config{
 		host:     viper.GetString(PGHOST),
@@ -58,7 +63,6 @@ func main() {
 		user:     viper.GetString(PGUSER),
 		password: viper.GetString(PGPASSWORD),
 	}
-
 
 	conn, err := sqlx.Connect("pgx", cfg.ToDSN())
 	if err != nil {
