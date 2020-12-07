@@ -13,15 +13,14 @@ import (
 )
 
 type Row struct {
-	Version   string
-	Component string
-	Query     string
+	Build     string
+	Metric    string
 	Value     float64
 	QueryTime time.Time `db:"query_time"`
 }
 
 func (r Row) String() string {
-	return fmt.Sprintf("Ver: %s | Component: %s | Query: %s | Val: %f | Time: %v", r.Version, r.Component, r.Query, r.Value, r.QueryTime)
+	return fmt.Sprintf("Ver: %s | Metric: %s | Val: %f | Time: %v", r.Build, r.Metric, r.Value, r.QueryTime)
 }
 
 const (
@@ -50,11 +49,8 @@ func main() {
 	viper.SetConfigType("dotenv")
 	err := viper.ReadInConfig()
 	if err != nil {
-		log.Fatalf("read config file err: %v", err)
+		log.Fatalf("read config file error: %v", err)
 	}
-
-	host := os.Getenv(PGHOST)
-	log.Printf("host: %s", host)
 
 	cfg := config{
 		host:     viper.GetString(PGHOST),
@@ -71,12 +67,12 @@ func main() {
 	defer conn.Close()
 
 	rows := make([]Row, 0)
-	err = conn.Select(&rows, "SELECT * FROM prom_test")
+	err = conn.Select(&rows, "SELECT * FROM metrics")
 	if err != nil {
 		log.Fatalf("select failed: %v", err)
 	}
 	log.Printf("got %d rows\n", len(rows))
 	for _, r := range rows {
-		log.Println(r.String())
+		log.Println("Row --- " + r.String())
 	}
 }

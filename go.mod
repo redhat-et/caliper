@@ -3,6 +3,7 @@ module github.com/copejon/prometheus-query
 go 1.14
 
 require (
+	github.com/Masterminds/squirrel v1.5.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect

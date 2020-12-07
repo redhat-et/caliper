@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -27,7 +28,6 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
-
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
@@ -94,15 +94,9 @@ func main() {
 	})
 	handleError(err)
 
-	for _, qr := range result {
-		if outFormat == "csv" {
-			out, err := qr.MarshalCSV()
-			if err != nil {
-				klog.Fatal(err)
-			}
-			fmt.Println(string(out))
-		} else {
-			fmt.Println(qr.String())
-		}
+	log.Printf("query returned %d samples", result[0].Len())
+	err  = insertVector(result[0].Vector)
+	if err != nil {
+		log.Fatalf("insert error: %v", err)
 	}
 }

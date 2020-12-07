@@ -73,7 +73,8 @@ type Config struct {
 // targetMetrics specify the metric to be queried.  These values are processed by generateQueryList()
 // to generated the query string
 var targetMetrics = []string{
-	"pod:container_cpu_usage:sum",
+	//"pod:container_cpu_usage:sum",
+	"node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate",
 	//"pod:container_memory_usage_bytes:sum",
 	//"container_fs_usage_bytes",
 	//"container_network_receive_bytes_total",
@@ -153,18 +154,14 @@ func sampleCSVRecord(s *model.Sample) []string {
 
 type QueryResult struct {
 	Query string `json:"query"`
-	model.Value
+	model.Vector
 	Warnings v1.Warnings `json:"warnings,omitempty"`
 }
 
 var header = []string{"namespace", "pod", "value", "time"}
 
 func (q QueryResult) MarshalCSV() ([]byte, error) {
-	v, ok := q.Value.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("expected model.Vector")
-	}
-
+	v := q.Vector
 	buf := new(bytes.Buffer)
 	wtr := csv.NewWriter(buf)
 	err := wtr.Write(header)
@@ -195,9 +192,13 @@ func top(cfg Config) ([]*QueryResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("query %q failed: %v", q, err)
 		}
+		v, ok := val.(model.Vector)
+		if !ok {
+			return nil, fmt.Errorf("expected vector")
+		}
 		results = append(results, &QueryResult{
 			Query:    q,
-			Value:    val,
+			Vector:   v,
 			Warnings: w,
 		})
 	}
