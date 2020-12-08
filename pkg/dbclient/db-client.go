@@ -17,28 +17,35 @@ package dbclient
 
 import (
 	"fmt"
-	_ "github.com/jackc/pgx/stdlib"
-	"github.com/jmoiron/sqlx"
-	"github.com/spf13/viper"
 	"log"
 	"os"
 	"path/filepath"
+
+	_ "github.com/jackc/pgx/stdlib"
+	"github.com/jmoiron/sqlx"
+	"github.com/spf13/viper"
 )
 
 // The column names expected to exist in the database table
 const (
 	// Build names the server version
-	Build      string = "build"
+	build = "build"
 	// Metric storage the prometheus model.Metric, a series of key=value labels
-	Metric     string = "metric"
+	metric = "metric"
 	// Value is the returned scalar value of the metric
-	Value      string = "value"
+	value = "value"
 	// QueryTime records the time and data the query we executed
-	QueryTime string = "query_time"
-
-	// Table is a hardcoded table name.  Will be replaced with dynamically set names.
-	Table string = "metrics"
+	queryTime = "query_time"
 )
+
+// Columns defines the expected headers for the metrics table and exists
+// to provide a source of truth for our table format.
+func Columns() []string {
+	return []string{build, metric, value, queryTime}
+}
+
+// Table is a hardcoded table name.  Will be replaced with dynamically set names.
+const Table = "metrics"
 
 const (
 	host     = "PGHOST"
@@ -48,8 +55,6 @@ const (
 	password = "PGPASSWORD"
 )
 
-
-
 type PostgresConfig struct {
 	host     string
 	port     int
@@ -58,7 +63,7 @@ type PostgresConfig struct {
 	password string
 }
 
-func (p PostgresConfig) String () string {
+func (p PostgresConfig) String() string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s", p.user, p.password, p.host, p.port, p.database)
 }
 
@@ -83,11 +88,11 @@ func initConfig() PostgresConfig {
 	}
 
 	return PostgresConfig{
-		host : viper.GetString(host),
-		port : viper.GetInt(port),
-		database : viper.GetString(database),
-		user : viper.GetString(user),
-		password : viper.GetString(password),
+		host:     viper.GetString(host),
+		port:     viper.GetInt(port),
+		database: viper.GetString(database),
+		user:     viper.GetString(user),
+		password: viper.GetString(password),
 	}
 }
 

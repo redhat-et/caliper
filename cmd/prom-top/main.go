@@ -120,7 +120,7 @@ func streamToDatabase(results []*top.QueryResult) error {
 	}
 	sqIns := squirrel.
 		Insert(dbclient.Table).
-		Columns(dbclient.Build, dbclient.Metric, dbclient.Value, dbclient.QueryTime).
+		Columns(dbclient.Columns()...).
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
 
