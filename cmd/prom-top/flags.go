@@ -61,7 +61,7 @@ func init() {
 	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "Path to kubeconfig file")
 	pflag.StringVarP(&queryType, "type", "t", queryTypeDefault, queryHelp)
 	pflag.StringVar(&span, "span", "", spanHelp)
-	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw]")
+	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw, postgres]")
 	pflag.Parse()
 
 	// If kubeconfig env var was set and no kubeconfig was provided via flag, use
@@ -74,3 +74,4 @@ func init() {
 	}
 
 }
+

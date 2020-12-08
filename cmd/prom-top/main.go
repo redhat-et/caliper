@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/Masterminds/squirrel"
 	"log"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
+	"github.com/copejon/prometheus-query/pkg/dbclient"
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 	promapi "github.com/prometheus/client_golang/api"
@@ -94,9 +96,53 @@ func main() {
 	})
 	handleError(err)
 
-	log.Printf("query returned %d samples", result[0].Len())
-	err  = insertVector(result[0].Vector)
+	switch outFormat {
+	case "postgres":
+		err = streamToDatabase(result)
+	case "csv":
+		// noop for now
+	default:
+		printToStdout(result)
+	}
 	if err != nil {
-		log.Fatalf("insert error: %v", err)
+		log.Fatal(err)
+	}
+}
+
+// Postgres compatible time format, required for converting query timestamps
+const timeFormat = `2006-01-02 15:04:05`
+
+func streamToDatabase(results []*top.QueryResult) error {
+	log.Println("init postgres db client")
+	db, err := dbclient.NewPostgresClient()
+	if err != nil {
+		return fmt.Errorf("failed to send to db: %v", err)
+	}
+	sqIns := squirrel.
+		Insert(dbclient.Table).
+		Columns(dbclient.Build, dbclient.Metric, dbclient.Value, dbclient.QueryTime).
+		PlaceholderFormat(squirrel.Dollar).
+		RunWith(db)
+
+	// time is the same for all vector metrics, so avoid re-calculating identical values
+	t0 := results[0].Vector[0].Timestamp.Time().Format(timeFormat)
+
+	for _, r := range results {
+		for _, sample := range r.Vector {
+			sqIns = sqIns.Values("BUILD", sample.Metric.String(), sample.Value, t0)
+		}
+	}
+	resp, err := sqIns.Exec()
+	if err != nil {
+		return fmt.Errorf("unable to generate sql insert script: %v", err)
+	}
+	nrows, _ := resp.RowsAffected()
+	log.Printf("insert success, updated %d rows", nrows)
+	return nil
+}
+
+func printToStdout(qr []*top.QueryResult) {
+	for _, r := range qr {
+		fmt.Println(r.String())
 	}
 }
