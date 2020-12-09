@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package dbclient
+package dbhandler
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ import (
 // The column names expected to exist in the database table
 const (
 	// Build names the server version
-	build = "build"
+	build = "server_info"
 	// Metric storage the prometheus model.Metric, a series of key=value labels
 	metric = "metric"
 	// Value is the returned scalar value of the metric

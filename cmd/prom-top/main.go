@@ -18,18 +18,22 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/Masterminds/squirrel"
+	"k8s.io/client-go/discovery"
 	"log"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	"github.com/copejon/prometheus-query/pkg/dbclient"
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
+
+	"github.com/copejon/prometheus-query/pkg/dbhandler"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
@@ -69,8 +73,13 @@ func main() {
 		klog.Exit("error: bearer token not found, required access to prometheus oauth access.  login to cluster with 'oc'")
 	}
 
-	rc := routeClient.NewForConfigOrDie(cfg)
+	dc := discovery.NewDiscoveryClientForConfigOrDie(cfg)
+	serverInfo, err := dc.ServerVersion()
+	if err != nil {
+		klog.Fatalf("server info fetch error: %v", err)
+	}
 
+	rc := routeClient.NewForConfigOrDie(cfg)
 	klog.Infof("fetching prometheus route")
 	route, err := rc.Routes(promNamespace).Get(context.Background(), promRoute, metav1.GetOptions{})
 	handleError(err)
@@ -98,7 +107,7 @@ func main() {
 
 	switch outFormat {
 	case "postgres":
-		err = streamToDatabase(result)
+		err = streamToDatabase(serverInfo ,result)
 	case "csv":
 		// noop for now
 	default:
@@ -112,24 +121,26 @@ func main() {
 // Postgres compatible time format, required for converting query timestamps
 const timeFormat = `2006-01-02 15:04:05`
 
-func streamToDatabase(results []*top.QueryResult) error {
+func streamToDatabase(server *version.Info, results []*top.QueryResult) error {
 	log.Println("init postgres db client")
-	db, err := dbclient.NewPostgresClient()
+	db, err := dbhandler.NewPostgresClient()
 	if err != nil {
 		return fmt.Errorf("failed to send to db: %v", err)
 	}
 	sqIns := squirrel.
-		Insert(dbclient.Table).
-		Columns(dbclient.Columns()...).
+		Insert(dbhandler.Table).
+		Columns(dbhandler.Columns()...).
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
+
+	si, _ := json.Marshal(server)
 
 	// time is the same for all vector metrics, so avoid re-calculating identical values
 	t0 := results[0].Vector[0].Timestamp.Time().Format(timeFormat)
 
 	for _, r := range results {
 		for _, sample := range r.Vector {
-			sqIns = sqIns.Values("BUILD", sample.Metric.String(), sample.Value, t0)
+			sqIns = sqIns.Values(si, sample.Metric.String(), sample.Value, t0)
 		}
 	}
 	resp, err := sqIns.Exec()
