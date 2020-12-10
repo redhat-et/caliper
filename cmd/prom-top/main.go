@@ -17,6 +17,9 @@ limitations under the License.
 package main
 
 import (
+
+	_ "gonum.org/v1/plot"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -113,9 +116,7 @@ func main() {
 	default:
 		printToStdout(result)
 	}
-	if err != nil {
-		log.Fatal(err)
-	}
+	handleError(err)
 }
 
 // Postgres compatible time format, required for converting query timestamps

@@ -73,15 +73,15 @@ type Config struct {
 // targetMetrics specify the metric to be queried.  These values are processed by generateQueryList()
 // to generated the query string
 var targetMetrics = []string{
-	//"pod:container_cpu_usage:sum",
+	"pod:container_cpu_usage:sum",
 	"node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate",
-	//"pod:container_memory_usage_bytes:sum",
+	"pod:container_memory_usage_bytes:sum",
 	//"container_fs_usage_bytes",
 	//"container_network_receive_bytes_total",
 	//"container_network_transmit_bytes_total",
 }
 
-// Querie Templates
+// Query Templates
 // These templates are combined with targetMetrics to generate the query string respective of the query type
 // defined at start time.  Given ONE OF
 //     T_INSTANT
@@ -89,10 +89,17 @@ var targetMetrics = []string{
 //     T_AVERAGE
 // the corresponding query below is used.  Only ONE query is executed during runtime.
 const (
-	// TODO range values currently hardcoded to 10min, eventually will be flag configurable
-	quantileOverTimeTemplate string = `quantile_over_time(.95, {{.Metric}}[{{.Range}}])`
-	avgOverTimeTemplate      string = `avg_over_time({{.Metric}}[{{.Range}}])`
-	instantTemplate          string = `{{.Metric}}`
+	quantileOverTimeTemplate = `quantile_over_time(.95, {{.Metric}}[{{.Range}}])`
+	avgOverTimeTemplate      = `avg_over_time({{.Metric}}[{{.Range}}])`
+	instantTemplate          = `{{.Metric}}`
+
+	// appLabelQuery wraps query templates after they've been processed in order to
+	// add the 'label_app' label to the metric.  This groups pods by their deployment
+	appLabelQuery = `
+sum by (pod, label_app) (kube_pod_labels{pod!="", label_app!=""}) * 
+on (pod) 
+group_right(label_app) 
+sum by (pod, namespace, node) ({{.Query}})`
 )
 
 const (
@@ -118,27 +125,39 @@ func selectQueryTemplate(q string) (t string, err error) {
 	return t, nil
 }
 
+var tmp = new(template.Template)
+
 func generateTargetMetricQueries(cfg Config) ([]string, error) {
 	rawTmp, err := selectQueryTemplate(cfg.QueryType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query type: %v", err)
 	}
-	tmp, err := template.New("query").Parse(rawTmp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate query template: %v", err)
-	}
+
+	const query, appLables = "query", "labels"
+	template.Must(tmp.New(query).Parse(rawTmp))
+	template.Must(tmp.New(appLables).Parse(appLabelQuery))
+
 	queries := make([]string, 0, len(targetMetrics))
 	for _, tm := range targetMetrics {
-		buf := new(bytes.Buffer)
-		err = tmp.Execute(buf, &struct {
+		innerQuery := new(bytes.Buffer)
+		err = tmp.ExecuteTemplate(innerQuery, query, &struct {
 			Metric, Range string
-		}{
-			tm, cfg.Range,
-		})
+		}{tm, cfg.Range})
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate query: %v", err)
+			return nil, err
 		}
-		queries = append(queries, buf.String())
+		queryWithLabel := new(bytes.Buffer)
+		err = tmp.ExecuteTemplate(queryWithLabel, appLables, &struct {
+			Query string
+		}{innerQuery.String()})
+		if err != nil {
+			return nil, err
+		}
+		queries = append(queries, queryWithLabel.String())
+	}
+
+	for _, q := range queries {
+		fmt.Printf("%+v", q)
 	}
 	return queries, nil
 }
