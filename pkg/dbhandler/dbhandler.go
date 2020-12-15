@@ -20,29 +20,43 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/viper"
 )
 
-// The column names expected to exist in the database table
-const (
-	// Build names the server version
-	build = "server_info"
-	// Metric storage the prometheus model.Metric, a series of key=value labels
-	metric = "metric"
-	// Value is the returned scalar value of the metric
-	value = "value"
-	// QueryTime records the time and data the query we executed
-	queryTime = "query_time"
-)
-
-// Columns defines the expected headers for the metrics table and exists
-// to provide a source of truth for our table format.
-func Columns() []string {
-	return []string{build, metric, value, queryTime}
+type Row struct {
+	Version      string    `db:"version"`
+	Query        string    `db:"query"`
+	Unit         string    `db:"unit"`
+	AppLabel     string    `db:"app_label"`
+	Pod          string    `db:"pod"`
+	Namespace    string    `db:"namespace"`
+	InstantValue float64   `db:"inst"`
+	Q95Value     float64   `db:"q95"`
+	AvgValue     float64   `db:"avg"`
+	QueryTime    time.Time `db:"query_time"`
 }
+// ColumnsHeaders defines the expected headers for the metrics table and exists
+// to provide a source of truth for our table format.
+func ColumnsHeaders() []string {
+	return []string{
+		"version",
+		"query",
+		"unit",
+		"app_label",
+		"pod",
+		"namespace",
+		"inst",
+		"q95",
+		"avg",
+		"query_time",
+	}
+}
+
+const TimestampFormat = `2006-01-02 15:04:05`
 
 // Table is a hardcoded table name.  Will be replaced with dynamically set names.
 const Table = "metrics"

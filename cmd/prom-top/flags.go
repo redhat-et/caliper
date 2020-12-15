@@ -56,10 +56,9 @@ Example:
 func init() {
 	home, _ := os.UserHomeDir()
 	kubeconfigDefault := filepath.Join(home, `.kube/config`)
-	queryTypeDefault := "q" // 95th quantile
 
 	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "Path to kubeconfig file")
-	pflag.StringVarP(&queryType, "type", "t", queryTypeDefault, queryHelp)
+	pflag.StringVarP(&queryType, "type", "t", "", queryHelp)
 	pflag.StringVar(&span, "span", "", spanHelp)
 	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw, postgres]")
 	pflag.Parse()

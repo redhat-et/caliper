@@ -17,18 +17,13 @@ limitations under the License.
 package main
 
 import (
-
 	_ "gonum.org/v1/plot"
 
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/Masterminds/squirrel"
-	"k8s.io/client-go/discovery"
-	"log"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -76,12 +71,6 @@ func main() {
 		klog.Exit("error: bearer token not found, required access to prometheus oauth access.  login to cluster with 'oc'")
 	}
 
-	dc := discovery.NewDiscoveryClientForConfigOrDie(cfg)
-	serverInfo, err := dc.ServerVersion()
-	if err != nil {
-		klog.Fatalf("server info fetch error: %v", err)
-	}
-
 	rc := routeClient.NewForConfigOrDie(cfg)
 	klog.Infof("fetching prometheus route")
 	route, err := rc.Routes(promNamespace).Get(context.Background(), promRoute, metav1.GetOptions{})
@@ -110,7 +99,7 @@ func main() {
 
 	switch outFormat {
 	case "postgres":
-		err = streamToDatabase(serverInfo ,result)
+		err = streamToDatabase(result)
 	case "csv":
 		// noop for now
 	default:
@@ -120,28 +109,24 @@ func main() {
 }
 
 // Postgres compatible time format, required for converting query timestamps
-const timeFormat = `2006-01-02 15:04:05`
-
-func streamToDatabase(server *version.Info, results []*top.QueryResult) error {
-	log.Println("init postgres db client")
+func streamToDatabase(results []*top.QueryResult) error {
+	klog.Infoln("init postgres db client")
 	db, err := dbhandler.NewPostgresClient()
 	if err != nil {
 		return fmt.Errorf("failed to send to db: %v", err)
 	}
 	sqIns := squirrel.
 		Insert(dbhandler.Table).
-		Columns(dbhandler.Columns()...).
+		Columns(dbhandler.ColumnsHeaders()...).
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
 
-	si, _ := json.Marshal(server)
-
-	// time is the same for all vector metrics, so avoid re-calculating identical values
-	t0 := results[0].Vector[0].Timestamp.Time().Format(timeFormat)
+	// time is the same for all vector metrics, so avoid re-rcalculating identical values
+	t0 := results[0].Vector[0].Timestamp.Time().Format(dbhandler.TimestampFormat)
 
 	for _, r := range results {
 		for _, sample := range r.Vector {
-			sqIns = sqIns.Values(si, sample.Metric.String(), sample.Value, t0)
+			sqIns = sqIns.Values("VERSION", r.Query, "CPUs Seconds", sample.Metric["label_app"], sample.Metric["pod"], sample.Metric["namespace"], sample.Value, 0, 0, t0)
 		}
 	}
 	resp, err := sqIns.Exec()
@@ -149,12 +134,14 @@ func streamToDatabase(server *version.Info, results []*top.QueryResult) error {
 		return fmt.Errorf("unable to generate sql insert script: %v", err)
 	}
 	nrows, _ := resp.RowsAffected()
-	log.Printf("insert success, updated %d rows", nrows)
+	klog.Infof("insert success, updated %d rows", nrows)
 	return nil
 }
 
 func printToStdout(qr []*top.QueryResult) {
+	klog.Infof("got %d results", len(qr))
 	for _, r := range qr {
-		fmt.Println(r.String())
+		klog.Infof("query: %s", r.Query)
+		//klog.Infoln(r.String())
 	}
 }

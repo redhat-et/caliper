@@ -70,16 +70,22 @@ type Config struct {
 	PrometheusClient v1.API `json:"prometheusClient"`
 }
 
-// targetMetrics specify the metric to be queried.  These values are processed by generateQueryList()
-// to generated the query string
-var targetMetrics = []string{
-	"pod:container_cpu_usage:sum",
-	"node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate",
-	"pod:container_memory_usage_bytes:sum",
+const (
+	podCpu = "pod:container_cpu_usage:sum"
+	podMem = "pod:container_memory_usage_bytes:sum"
 	//"container_fs_usage_bytes",
 	//"container_network_receive_bytes_total",
 	//"container_network_transmit_bytes_total",
+)
+
+var queriesToUnits = map[string]string{
+	podCpu: "cpus",
+	podMem: "bytes",
 }
+
+// targetMetrics specify the metric to be queried.  These values are processed by generateQueryList()
+// to generated the query string
+var targetMetrics = []string{podCpu, podMem}
 
 // Query Templates
 // These templates are combined with targetMetrics to generate the query string respective of the query type
@@ -95,69 +101,65 @@ const (
 
 	// appLabelQuery wraps query templates after they've been processed in order to
 	// add the 'label_app' label to the metric.  This groups pods by their deployment
-	appLabelQuery = `
-sum by (pod, label_app) (kube_pod_labels{pod!="", label_app!=""}) * 
-on (pod) 
-group_right(label_app) 
-sum by (pod, namespace, node) ({{.Query}})`
+	appLabelQuery = `sum by (pod, label_app) (kube_pod_labels{pod!="", label_app!=""}) * on (pod) group_right(label_app) sum by (pod, namespace, node) ({{.Query}})
+`
 )
 
 const (
 	//T_INSTANT toggles an instant vector query
-	T_INSTANT string = "i"
+	T_INSTANT = "i"
 	//T_QUANTILE toggles the 95%ile over time query
-	T_QUANTILE string = "q"
+	T_QUANTILE = "q"
 	// T_AVERAGE toggles the average over time query
-	T_AVERAGE string = "a"
+	T_AVERAGE = "a"
 )
 
-func selectQueryTemplate(q string) (t string, err error) {
+func selectQueryTemplates(q string) ([]string, error) {
+	t := make([]string, 0)
+	fmt.Printf("template flag: %s\n", q)
 	switch q {
 	case T_QUANTILE:
-		t = quantileOverTimeTemplate
+		t = append(t, quantileOverTimeTemplate)
 	case T_AVERAGE:
-		t = avgOverTimeTemplate
+		t = append(t, avgOverTimeTemplate)
 	case T_INSTANT:
-		t = instantTemplate
+		t = append(t, instantTemplate)
 	default:
-		return "", fmt.Errorf("unsupported QueryString selector: %s", q)
+		t = []string{quantileOverTimeTemplate, avgOverTimeTemplate, instantTemplate}
 	}
 	return t, nil
 }
 
-var tmp = new(template.Template)
-
 func generateTargetMetricQueries(cfg Config) ([]string, error) {
-	rawTmp, err := selectQueryTemplate(cfg.QueryType)
+	metricTmps, err := selectQueryTemplates(cfg.QueryType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query type: %v", err)
 	}
 
-	const query, appLables = "query", "labels"
-	template.Must(tmp.New(query).Parse(rawTmp))
-	template.Must(tmp.New(appLables).Parse(appLabelQuery))
+	queries := make([]string, 0)
+	appLabelsTmp := template.New("labels")
+	template.Must(appLabelsTmp.Parse(appLabelQuery))
+	for _, t := range metricTmps {
+		tmp := template.New("")
+		template.Must(tmp.Parse(t))
+		for _, tm := range targetMetrics {
+			metricBuf := new(bytes.Buffer)
+			err = tmp.Execute(metricBuf, struct {
+				Metric, Range string
+			}{tm, cfg.Range})
+			if err != nil {
+				return nil, fmt.Errorf("composing base query template: %v", err)
+			}
 
-	queries := make([]string, 0, len(targetMetrics))
-	for _, tm := range targetMetrics {
-		innerQuery := new(bytes.Buffer)
-		err = tmp.ExecuteTemplate(innerQuery, query, &struct {
-			Metric, Range string
-		}{tm, cfg.Range})
-		if err != nil {
-			return nil, err
+			labelBuf := new(bytes.Buffer)
+			err = appLabelsTmp.Execute(labelBuf, struct {
+				Query string
+			}{metricBuf.String()})
+			if err != nil {
+				return nil, fmt.Errorf("composing label query template: %v", err)
+			}
+			queries = append(queries, labelBuf.String())
 		}
-		queryWithLabel := new(bytes.Buffer)
-		err = tmp.ExecuteTemplate(queryWithLabel, appLables, &struct {
-			Query string
-		}{innerQuery.String()})
-		if err != nil {
-			return nil, err
-		}
-		queries = append(queries, queryWithLabel.String())
-	}
-
-	for _, q := range queries {
-		fmt.Printf("%+v", q)
 	}
 	return queries, nil
 }
