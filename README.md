@@ -1,4 +1,4 @@
-# Prometheus Resource Usage Querier [WIP]
+# Caliper [WIP]
 
 **// // // // // // ATTENTION: CONSTRUCTION AREA! // // // // // //**
 
