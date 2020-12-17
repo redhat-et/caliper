@@ -27,11 +27,12 @@ const kubeconfigEnv = "KUBECONFIG"
 var (
 	kubeconfig string
 	queryType  string
-	span       string
+	queryRange string
 	outFormat  string
+	version    string
 )
 
-const spanHelp = `The span of time over which metrics are collected, starting from Now - span until Now
+const rangeHelp = `The range of time over which metrics are collected, starting from now() - range until now()
 Input must adhere to Prometheus time format where time is an int and time unit is a single
 character.
   Time units are:
@@ -59,8 +60,9 @@ func init() {
 
 	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "Path to kubeconfig file")
 	pflag.StringVarP(&queryType, "type", "t", "", queryHelp)
-	pflag.StringVar(&span, "span", "", spanHelp)
+	pflag.StringVar(&queryRange, "range", "", rangeHelp)
 	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw, postgres]")
+	pflag.StringVarP(&version, "ocp-version", "v", "", "the version of ocp executed against")
 	pflag.Parse()
 
 	// If kubeconfig env var was set and no kubeconfig was provided via flag, use
@@ -73,4 +75,3 @@ func init() {
 	}
 
 }
-

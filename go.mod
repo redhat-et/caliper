@@ -1,4 +1,4 @@
-module github.com/copejon/prometheus-query
+module github.com/redhat-et/caliper
 
 go 1.14
 
@@ -25,12 +25,11 @@ require (
 	golang.org/x/crypto v0.0.0-20201203163018-be400aefbc4c // indirect
 	golang.org/x/image v0.0.0-20200927104501-e162460cd6b5 // indirect
 	golang.org/x/net v0.0.0-20201202161906-c7110b5ffcbb // indirect
-	golang.org/x/oauth2 v0.0.0-20201203001011-0b49973bad19 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
-	gonum.org/v1/plot v0.8.1
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 	k8s.io/apimachinery v0.19.2-rc.0
 	k8s.io/client-go v0.19.1
+	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.3.0
 	k8s.io/utils v0.0.0-20200821003339-5e75c0163111 // indirect
 )

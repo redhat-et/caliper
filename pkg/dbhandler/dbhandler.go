@@ -28,30 +28,29 @@ import (
 )
 
 type Row struct {
-	Version      string    `db:"version"`
-	Query        string    `db:"query"`
-	Unit         string    `db:"unit"`
-	AppLabel     string    `db:"app_label"`
-	Pod          string    `db:"pod"`
-	Namespace    string    `db:"namespace"`
-	InstantValue float64   `db:"inst"`
-	Q95Value     float64   `db:"q95"`
-	AvgValue     float64   `db:"avg"`
-	QueryTime    time.Time `db:"query_time"`
+	Version        string    `db:"version"`
+	Metric         string    `db:"metric"`
+	AggregatorCode string    `db:"aggregator_code"`
+	LabelApp       string    `db:"label_app"`
+	Pod            string    `db:"pod"`
+	Namespace      string    `db:"namespace"`
+	Node           string    `db:"node"`
+	Value          float64   `db:"value"`
+	QueryTime      time.Time `db:"query_time"`
 }
+
 // ColumnsHeaders defines the expected headers for the metrics table and exists
 // to provide a source of truth for our table format.
 func ColumnsHeaders() []string {
 	return []string{
 		"version",
-		"query",
-		"unit",
-		"app_label",
+		"metric",
+		"aggregator_code",
 		"pod",
 		"namespace",
-		"inst",
-		"q95",
-		"avg",
+		"label_app",
+		"node",
+		"value",
 		"query_time",
 	}
 }

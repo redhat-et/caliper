@@ -17,11 +17,11 @@ limitations under the License.
 package main
 
 import (
-	_ "gonum.org/v1/plot"
-
 	"context"
 	"fmt"
+
 	"github.com/Masterminds/squirrel"
+	"github.com/spf13/pflag"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -31,11 +31,11 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
-	"github.com/copejon/prometheus-query/pkg/dbhandler"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
-	"github.com/copejon/prometheus-query/pkg/top"
+	"github.com/redhat-et/caliper/pkg/dbhandler"
+	"github.com/redhat-et/caliper/pkg/top"
 )
 
 func hasBearerToken(cfg *rest.Config) bool {
@@ -61,6 +61,7 @@ const (
 )
 
 func main() {
+	pflag.Parse()
 	defer klog.Flush()
 
 	klog.Infof("initializing openshift client from KUBECONFIG=%s", kubeconfig)
@@ -91,9 +92,9 @@ func main() {
 	handleError(err)
 
 	result, err := top.Top(top.Config{
-		QueryType:        queryType,
+		Range:            queryRange,
+		Context:          context.Background(),
 		PrometheusClient: pc,
-		Range:            span,
 	})
 	handleError(err)
 
@@ -106,6 +107,9 @@ func main() {
 		printToStdout(result)
 	}
 	handleError(err)
+	for _, r := range result {
+		klog.Infof("Queried: %s, code: %s", r.Metric, r.AggregatorCode)
+	}
 }
 
 // Postgres compatible time format, required for converting query timestamps
@@ -121,12 +125,22 @@ func streamToDatabase(results []*top.QueryResult) error {
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
 
-	// time is the same for all vector metrics, so avoid re-rcalculating identical values
+	// time is the same for all vector metrics, so avoid re-calculating identical values
 	t0 := results[0].Vector[0].Timestamp.Time().Format(dbhandler.TimestampFormat)
 
 	for _, r := range results {
 		for _, sample := range r.Vector {
-			sqIns = sqIns.Values("VERSION", r.Query, "CPUs Seconds", sample.Metric["label_app"], sample.Metric["pod"], sample.Metric["namespace"], sample.Value, 0, 0, t0)
+			sqIns = sqIns.Values(
+				version,
+				r.Metric,
+				r.AggregatorCode,
+				sample.Metric["pod"],
+				sample.Metric["namespace"],
+				sample.Metric["label_app"],
+				sample.Metric["node"],
+				sample.Value,
+				t0,
+			)
 		}
 	}
 	resp, err := sqIns.Exec()
@@ -141,7 +155,6 @@ func streamToDatabase(results []*top.QueryResult) error {
 func printToStdout(qr []*top.QueryResult) {
 	klog.Infof("got %d results", len(qr))
 	for _, r := range qr {
-		klog.Infof("query: %s", r.Query)
-		//klog.Infoln(r.String())
+		klog.Infof("%s", r.String())
 	}
 }
