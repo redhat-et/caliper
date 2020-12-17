@@ -12,6 +12,11 @@ This project consists of 2 components.
 - `plotter`: reads from a database and renders the information such that OCP components may be compared against each other across versions 
 in order to track resource consumption changes.
 
+### General Pre-reqs
+
+- A dotenv (`.env`) must be present in the same directory as `prom-top` and `plotter` containing db connection information.  This 
+is to simplify database access to for both apps.  An example file is provided at `./.env.example` in the repo root.
+
 ### Prom-top:
 
 **Prereqs**
@@ -34,37 +39,30 @@ default location (`$HOME/.kube/config`).
     
 ### Plotter:
 
-Plotter, like prom-top, is under development.  At present, it only reads rows from a postgres database and prints them to stdout.  Not that interesting.
-It will eventually produce graphs derived from the data it queries to illustrate trends in resource usage per OCP version, at individual component granularity.
-I.e. the net CPU usage by `api-server` pods.  More to follow.
+Plotter, like prom-top, is under development.  The app is written in Python3 and utilizes the Plotly library to process.
+It queries the database and generates a stacked bar chart from the results.  At present, it generates a single chart describing
+the percentage of CPU time consumed by each component vs the OCP version.
 
 **Prereqs**
 
-- A postgres database table, with columns configured as
+- A postgres database table, with columns configured as shown below.  Only **type** is required. 
 
 ```
-                        Table "public.prom_test"
-   Column   |            Type             | Collation | Nullable | Default
-------------+-----------------------------+-----------+----------+---------
- version    | text                        |           | not null |
- component  | text                        |           | not null |
- query      | text                        |           |          |
- value      | numeric(32,32)              |           |          |
- query_time | timestamp without time zone |           |          |
-```
-
-- A `.env` file at `./prom-top/` with the following values set:
-
-```
-PGHOST=[DATABASE_HOST]
-PGPORT=[DATABASE_PORT]
-PGDATABASE=[DATABASE_NAME]
-PGUSER=[DATABASE_USER]
-PGPASSWORD=[DATABASE_PASSWORD]
+                             Table "public.metrics"
+     Column      |            Type             | Collation | Nullable | Default
+-----------------+-----------------------------+-----------+----------+---------
+ version         | text                        |           | not null |
+ metric          | text                        |           |          |
+ pod             | text                        |           |          |
+ namespace       | text                        |           |          |
+ label_app       | text                        |           |          |
+ query_time      | timestamp without time zone |           |          |
+ value           | numeric                     |           |          |
+ aggregator_code | text                        |           |          |
+ node            | text                        |           |          |
 ```
 
 **Run**
 
 1. Ensure your working dir contains the `.env` file
-1. Execute `$ ./bin/plotter`
-
+1. execute `$ python `

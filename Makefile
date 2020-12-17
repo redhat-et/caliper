@@ -26,7 +26,7 @@ BUILD_IMG = registry.redhat.io/ubi8/go-toolset:1.13.4
 .PHONY: all build
 all: build
 
-build: ./cmd/prom-top ./cmd/plotter
+build: ./cmd/prom-top python/plotter
 	go build -o ./bin/prom-top ./cmd/prom-top/*.go
 	go build -o ./bin/plotter ./cmd/plotter/*.go
 
