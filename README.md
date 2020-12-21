@@ -65,4 +65,4 @@ the percentage of CPU time consumed by each component vs the OCP version.
 **Run**
 
 1. Ensure your working dir contains the `.env` file
-1. execute `$ python `
+1. execute `$ python python/plotter/main.py`
