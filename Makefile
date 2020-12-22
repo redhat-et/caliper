@@ -28,7 +28,6 @@ all: build
 
 build: ./cmd/prom-top python/plotter
 	go build -o ./bin/prom-top ./cmd/prom-top/*.go
-	go build -o ./bin/plotter ./cmd/plotter/*.go
 
 .PHONY: clean
 clean:
