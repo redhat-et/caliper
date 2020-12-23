@@ -19,9 +19,10 @@ package main
 import (
 	"context"
 	"fmt"
-
 	"github.com/Masterminds/squirrel"
+	"github.com/redhat-et/caliper/pkg/dbhandler"
 	"github.com/spf13/pflag"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -34,7 +35,7 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
-	"github.com/redhat-et/caliper/pkg/dbhandler"
+	//"github.com/redhat-et/caliper/pkg/dbhandler"
 	"github.com/redhat-et/caliper/pkg/top"
 )
 
@@ -102,46 +103,43 @@ func main() {
 	case "postgres":
 		err = streamToDatabase(result)
 	case "csv":
-		// noop for now
+		fmt.Printf("%s\n", result.MarshalCSV())
 	default:
 		printToStdout(result)
 	}
 	handleError(err)
-	for _, r := range result {
-		klog.Infof("Queried: %s, code: %s", r.Metric, r.AggregatorCode)
-	}
 }
 
-// Postgres compatible time format, required for converting query timestamps
-func streamToDatabase(results []*top.QueryResult) error {
+//Postgres compatible time format, required for converting query timestamps
+func streamToDatabase(metrics top.PodMetrics) error {
 	klog.Infoln("init postgres db client")
 	db, err := dbhandler.NewPostgresClient()
 	if err != nil {
 		return fmt.Errorf("failed to send to db: %v", err)
 	}
 	sqIns := squirrel.
-		Insert(dbhandler.Table).
+		Insert("collated_metrics").
 		Columns(dbhandler.ColumnsHeaders()...).
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
 
-	// time is the same for all vector metrics, so avoid re-calculating identical values
-	t0 := results[0].Vector[0].Timestamp.Time().Format(dbhandler.TimestampFormat)
+	t0 := time.Now().Format(dbhandler.TimestampFormat)
 
-	for _, r := range results {
-		for _, sample := range r.Vector {
-			sqIns = sqIns.Values(
-				version,
-				r.Metric,
-				r.AggregatorCode,
-				sample.Metric["pod"],
-				sample.Metric["namespace"],
-				sample.Metric["label_app"],
-				sample.Metric["node"],
-				sample.Value,
-				t0,
-			)
-		}
+	for _, m := range metrics {
+		sqIns = sqIns.Values(
+			version,
+			m.Metric,
+			m.Pod,
+			m.Namespace,
+			m.LabelApp,
+			t0,
+			m.AvgValue,
+			"",
+			m.Q95Value,
+			m.MaxValue,
+			m.MinValue,
+		)
+
 	}
 	resp, err := sqIns.Exec()
 	if err != nil {
@@ -152,9 +150,9 @@ func streamToDatabase(results []*top.QueryResult) error {
 	return nil
 }
 
-func printToStdout(qr []*top.QueryResult) {
-	klog.Infof("got %d results", len(qr))
-	for _, r := range qr {
-		klog.Infof("%s", r.String())
+func printToStdout(podMetrics []*top.PodMetric) {
+	klog.Infof("got %d results", len(podMetrics))
+	for _, pm := range podMetrics {
+		klog.Info(pm)
 	}
 }
