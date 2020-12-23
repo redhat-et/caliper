@@ -20,7 +20,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	_ "github.com/jackc/pgx/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -28,17 +27,19 @@ import (
 )
 
 type Row struct {
-	Version   string    `db:"version"`
-	Metric    string    `db:"metric"`
-	Pod       string    `db:"pod"`
-	Namespace string    `db:"namespace"`
-	LabelApp  string    `db:"label_app"`
-	Node      string    `db:"node"`
-	QueryTime time.Time `db:"query_time"`
-	Q95Value  float64   `db:"q95_value"`
-	AvgValue  float64   `db:"avg_value"`
-	MaxValue  float64   `db:"max_value"`
-	MinValue  float64   `db:"min_value"`
+	Version   string  `db:"version"`
+	Metric    string  `db:"metric"`
+	Pod       string  `db:"pod"`
+	Range     string  `db:"range"`
+	Namespace string  `db:"namespace"`
+	LabelApp  string  `db:"label_app"`
+	Node      string  `db:"node"`
+	QueryTime string  `db:"query_time"`
+	Q95Value  float64 `db:"q95_value"`
+	AvgValue  float64 `db:"avg_value"`
+	MaxValue  float64 `db:"max_value"`
+	MinValue  float64 `db:"min_value"`
+	InstValue float64 `db:"inst_value"`
 }
 
 // ColumnsHeaders defines the expected headers for the metrics table and exists
@@ -47,15 +48,17 @@ func ColumnsHeaders() []string {
 	return []string{
 		"version",
 		"metric",
+		"node",
 		"pod",
 		"namespace",
 		"label_app",
-		"query_time",
 		"avg_value",
-		"node",
 		"q95_value",
 		"max_value",
 		"min_value",
+		"inst_value",
+		"query_time",
+		"range",
 	}
 }
 

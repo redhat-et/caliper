@@ -19,15 +19,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/Masterminds/squirrel"
-	"github.com/redhat-et/caliper/pkg/dbhandler"
-	"github.com/spf13/pflag"
-	"time"
+	"os"
 
+	"github.com/Masterminds/squirrel"
+	"github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
+
+	"github.com/redhat-et/caliper/pkg/dbhandler"
 
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
@@ -64,6 +65,11 @@ const (
 func main() {
 	pflag.Parse()
 	defer klog.Flush()
+
+	if version == "" {
+		klog.Info("version flag (-v | --ocp-version) required")
+		os.Exit(1)
+	}
 
 	klog.Infof("initializing openshift client from KUBECONFIG=%s", kubeconfig)
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -123,21 +129,21 @@ func streamToDatabase(metrics top.PodMetrics) error {
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
 
-	t0 := time.Now().Format(dbhandler.TimestampFormat)
-
 	for _, m := range metrics {
 		sqIns = sqIns.Values(
 			version,
 			m.Metric,
+			m.Node,
 			m.Pod,
 			m.Namespace,
 			m.LabelApp,
-			t0,
 			m.AvgValue,
-			"",
 			m.Q95Value,
 			m.MaxValue,
 			m.MinValue,
+			m.InstValue,
+			m.QueryTime,
+			m.Range,
 		)
 
 	}

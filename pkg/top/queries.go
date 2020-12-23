@@ -48,6 +48,8 @@ import (
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+
+	"github.com/redhat-et/caliper/pkg/dbhandler"
 )
 
 type Config struct {
@@ -94,7 +96,7 @@ const (
 
 	// appLabelQuery wraps query templates after they've been processed in order to
 	// add the 'label_app' label to the metric.  This groups pods by their deployment
-	appLabelQuery = `sum by (pod, label_app) (kube_pod_labels{pod!="", label_app!=""}) * on (pod) group_right(label_app) sum by (pod, namespace, node) ({{.Query}})`
+	appLabelQuery = `sum by (pod, label_app) (kube_pod_labels{pod!=""}) * on (pod) group_right(label_app) sum by (pod, namespace, node) ({{.Query}})`
 )
 
 func selectQueryTemplates(q string) ([]string, error) {
@@ -113,19 +115,7 @@ func selectQueryTemplates(q string) ([]string, error) {
 	return t, nil
 }
 
-// PodMetric contains the collective query results for a single pod.
-type PodMetric struct {
-	Range     string  `json:"range"`
-	Metric    string  `json:"metric" db:"metric"`
-	LabelApp  string  `json:"label-app" db:"label_app"`
-	Pod       string  `json:"pod" db:"pod"`
-	Namespace string  `json:"namespace" db:"namespace"`
-	Q95Value  float64 `json:"q-95-value" db:"q95_value"`
-	AvgValue  float64 `json:"avg-value" db:"avg_value"`
-	MaxValue  float64 `json:"max-value" db:"max_value"`
-	MinValue  float64 `json:"min-value" db:"min_value"`
-	InstValue float64 `json:"inst-value"`
-}
+type PodMetric dbhandler.Row
 
 func (p PodMetric) MarshalCSV() []byte {
 	return []byte(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,\n",
@@ -175,7 +165,6 @@ func top(cfg Config) (PodMetrics, error) {
 	// in up to 4 values per pod.  Pods are hashed to the table to enable simple lookup and updating
 	podMetricHashTable := make(map[uint32]*PodMetric)
 	hash := fnv.New32a()
-	netSamples := 0
 	for _, tm := range targetMetrics {
 		for _, qt := range queryTemplates {
 			tmp := template.New("")
@@ -211,13 +200,12 @@ func top(cfg Config) (PodMetrics, error) {
 				return nil, fmt.Errorf("template unknown in lookup: %s", qt)
 			}
 
-			netSamples += vector.Len()
-
 			for _, sample := range vector {
 				ns, _ := sample.Metric["namespace"]
 				pod, _ := sample.Metric["pod"]
 
-				_, err := hash.Write([]byte(fmt.Sprintf("%s-%s", string(ns), string(pod))))
+				// The hash is derived from the namespace, pod name, and target metric
+				_, err := hash.Write([]byte(fmt.Sprintf("%s-%s-%s", string(ns), string(pod), tm)))
 				id := hash.Sum32()
 				hash.Reset()
 
@@ -235,6 +223,7 @@ func top(cfg Config) (PodMetrics, error) {
 				podMetricHashTable[id].Metric = metricToTitle(tm)
 				podMetricHashTable[id].LabelApp = string(labelApp)
 				podMetricHashTable[id].Range = cfg.Range
+				podMetricHashTable[id].QueryTime = now.Format(dbhandler.TimestampFormat)
 
 				switch {
 				case strings.Contains(qt, "quantile_over_time"):
