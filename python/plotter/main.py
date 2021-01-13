@@ -1,15 +1,11 @@
-from itertools import groupby
-import plotly.graph_objects as go
+import dash
+import dash_core_components as dcc
+import dash_html_components as html
+from dash.dependencies import Input, Output
 import pandas as pd
-import plotly.express as px
 import psycopg2
-
-# import plotly.graph_objects as go
-
-pd.set_option("display.max_rows", None)
-pd.set_option("display.max_columns", None)
-pd.set_option("display.width", None)
-pd.set_option("display.max_colwidth", None)
+from plotly import express as px
+import plotly.graph_objects as go
 
 conn = psycopg2.connect(
     host="localhost",
@@ -18,61 +14,145 @@ conn = psycopg2.connect(
     user="promtop",
     password="password"
 )
-cur = conn.cursor()
 
-# query = """
-#     SELECT version, metric, label_app, AVG(value) AS total FROM metrics
-#     WHERE aggregator_code = 'AVG' AND metric = 'container_cpu_usage_seconds_total'
-#     GROUP BY version, label_app, metric
-#     ORDER BY version, total DESC;
-#     """
 
-query = """
-    SELECT version, label_app, value FROM metrics
-    WHERE aggregator_code = 'AVG' AND metric = 'container_cpu_usage_seconds_total'
-    ORDER BY version, label_app, value;
-"""
+def executeQuery(query):
+    cur = conn.cursor()
+    cur.execute(query)
+    desc = cur.description
+    columns = [col[0] for col in desc]
+    rows = [row for row in cur.fetchall()]
+    df = pd.DataFrame([[c for c in r] for r in rows])
+    df.rename(inplace=True, columns=dict(enumerate(columns)))
+    return df
 
-cur.execute(query)
-desc = cur.description
 
-columns = [col[0] for col in desc]
-rows = [row for row in cur.fetchall()]
+def get_mem_metrics():
+    query_mem = """
+    SELECT * FROM collated_metrics WHERE metric = 'container_memory_usage_bytes';
+    """
+    return executeQuery(query_mem)
 
-# labeledRows = list(dict(zip(columns, r)) for r in rows)
-labelRowPct = []
-for k, g in groupby(
-        sorted(rows, key=lambda a: a[columns.index("version")]),
-        key=lambda a: a[columns.index("version")]):
-    # if k not in labelRowPct:
-    #     labelRowPct[k] = []
-    grp = list(g)
-    groupTotal = sum([v[columns.index("value")] for v in grp])
-    for k2, g2 in groupby(grp, key=lambda a: a[1]):
-        print(k2)
-        pct = (sum(n[2] for n in g2) / groupTotal) * 100
-        ent = {
-            "version": k,
-            "value": round(pct, ndigits=2),
-            "label_app": str(k2)
-        }
-        labelRowPct.append(ent)
 
-print(labelRowPct)
-df = pd.DataFrame(data=labelRowPct)
-df.sort_values(by="value", inplace=True, ascending=False)
-fig = px.bar(df,
-             title="OCP Versions vs % CPU consumption in nanoseconds per app-label",
-             width=1500,
-             color="label_app",
-             x="version",
-             y="value",
-             range_y=(0, 100),
-             labels=dict(
-                 version="OCP Version",
-                 value="% of Total CPU Usage in Nanoseconds",
-                 valueSuffix="%",
-             )
-             )
-fig.update_yaxes(showticksuffix="all", ticksuffix="%")
-fig.show()
+def get_cpu_metrics():
+    query_cpu = """
+    SELECT * FROM collated_metrics WHERE metric = 'container_cpu_usage_seconds_total';
+    """
+    return executeQuery(query_cpu)
+
+
+def trim_and_group(df, value):
+    new_df = df[['version', 'metric', 'namespace', value, 'range']].copy(deep=True)
+    new_df = new_df.groupby(by=['version', 'metric', 'namespace', 'range']).agg({value: 'sum'})  # sum values of each namespace
+    new_df.sort_values(by=[value], inplace=True)
+    new_df.reset_index(inplace=True)
+    return new_df
+
+
+def get_metric():
+    print()
+
+
+def get_range(df=pd.DataFrame()):
+    ret = df.loc[[0], ['range']].squeeze()
+    return ret
+
+
+def generate_mem_value_fig(df=pd.DataFrame(), value=''):
+    fig = px.bar(
+        data_frame=df,
+        x='version',
+        y=value,
+        color='namespace'
+    )
+    fig.update_yaxes({
+        'ticksuffix': 'Mb',
+        'title': 'OCP Namespaces'
+    })
+    fig.update_xaxes({
+        'title': 'OCP Versions'
+    })
+    r = get_range(df)
+    fig.update_layout(
+        {'title': 'Memory Usage by Namespace over {}'.format(r)}
+    )
+    return fig
+
+
+def generate_cpu_value_fig(df=pd.DataFrame(), value=''):
+    fig = px.bar(
+        data_frame=df,
+        x='version',
+        y=value,
+        color='namespace'
+    )
+    fig.update_yaxes({
+        'ticksuffix': 'ns',
+        'title': 'OCP Namespaces'
+    })
+    fig.update_xaxes({
+        'title': 'OCP Versions'
+    })
+    r = get_range(df)
+    fig.update_layout(
+        {'title': 'CPU Usage by Namespace over {}'.format(r)}
+    )
+    return fig
+
+
+radio_options = [
+    {'label': 'Average', 'value': 'avg_value'},
+    {'label': '95th-%', 'value': 'q95_value'},
+    {'label': 'Min', 'value': 'min_value'},
+    {'label': 'Max', 'value': 'max_value'},
+    {'label': 'Instant', 'value': 'inst_value'},
+]
+
+app = dash.Dash(__name__)
+app.layout = html.Div(children=[
+    html.H1(children='Caliper'),
+    html.Div(children=[
+            dcc.Graph(id='memory-graph'),
+            dcc.RadioItems(id='memory-op-radio', value='avg_value', options=radio_options),
+        ]
+    ),
+    html.Div(children=[
+        dcc.Graph(id='cpu-graph'),
+        dcc.RadioItems(id='cpu-op-radio', value='avg_value', options=radio_options)
+    ])
+])
+
+
+@app.callback(
+    Output(component_id='memory-graph', component_property='figure'),
+    Input(component_id='memory-op-radio', component_property='value')
+)
+def mem_response(op):
+    df_mem = get_mem_metrics()
+    df_mem = trim_and_group(df_mem, op)
+    fig = generate_mem_value_fig(df_mem, op)
+    return fig
+
+
+@app.callback(
+    Output(component_id='cpu-graph', component_property='figure'),
+    Input(component_id='cpu-op-radio', component_property='value')
+)
+def cpu_response(op):
+    df_cpu = get_cpu_metrics()
+    df_cpu = trim_and_group(df_cpu, op)
+    fig = generate_cpu_value_fig(df_cpu, op)
+    return fig
+
+
+# def debug():
+#     op = 'avg_value'
+#     df_mem = get_mem_metrics()
+#     df_mem = trim_and_group(df_mem, op)
+#     fig = generate_mem_value_fig(df_mem, op)
+#     fig.show()
+
+
+if __name__ == '__main__':
+    # debug()
+    app.run_server(debug=True)
