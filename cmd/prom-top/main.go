@@ -28,15 +28,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	"github.com/redhat-et/caliper/pkg/dbhandler"
-
 	routev1 "github.com/openshift/api/route/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
-	//"github.com/redhat-et/caliper/pkg/dbhandler"
+	"github.com/redhat-et/caliper/pkg/dbhandler"
 	"github.com/redhat-et/caliper/pkg/top"
 )
 
