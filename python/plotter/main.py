@@ -5,7 +5,15 @@ from dash.dependencies import Input, Output
 import pandas as pd
 import psycopg2
 from plotly import express as px
-import plotly.graph_objects as go
+
+# for debugging dataframes printed to console
+pd.set_option('min_rows', 10)
+pd.set_option('max_rows', 20)
+pd.set_option('display.max_columns', 20)
+pd.set_option('display.width', 1098)
+
+# TODO
+# grouping, Y-axis value, x-axis ordering, hard-min/max
 
 conn = psycopg2.connect(
     host="localhost",
@@ -58,16 +66,17 @@ def get_range(df=pd.DataFrame()):
     return ret
 
 
-def generate_mem_value_fig(df=pd.DataFrame(), value=''):
+def generate_mem_value_fig(df=pd.DataFrame(), op='', y_max=100):
     fig = px.bar(
         data_frame=df,
         x='version',
-        y=value,
-        color='namespace'
+        y=op,
+        color='namespace',
+        range_y=[0, y_max]
     )
     fig.update_yaxes({
         'ticksuffix': 'Mb',
-        'title': 'OCP Namespaces'
+        'title': 'OCP Namespaces',
     })
     fig.update_xaxes({
         'title': 'OCP Versions'
@@ -79,11 +88,11 @@ def generate_mem_value_fig(df=pd.DataFrame(), value=''):
     return fig
 
 
-def generate_cpu_value_fig(df=pd.DataFrame(), value=''):
+def generate_cpu_value_fig(df=pd.DataFrame(), op=''):
     fig = px.bar(
         data_frame=df,
         x='version',
-        y=value,
+        y=op,
         color='namespace'
     )
     fig.update_yaxes({
@@ -145,12 +154,12 @@ def cpu_response(op):
     return fig
 
 
-# def debug():
-#     op = 'avg_value'
-#     df_mem = get_mem_metrics()
-#     df_mem = trim_and_group(df_mem, op)
-#     fig = generate_mem_value_fig(df_mem, op)
-#     fig.show()
+def debug():
+    op = 'avg_value'
+    df_mem = get_mem_metrics()
+    df_mem = trim_and_group(df_mem, op)
+    fig = generate_mem_value_fig(df_mem, op)
+    fig.show()
 
 
 if __name__ == '__main__':
