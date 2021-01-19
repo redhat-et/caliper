@@ -6,8 +6,7 @@ import pandas as pd
 import psycopg2
 from plotly import express as px
 from plotly import graph_objects as go
-import numpy as np
-
+from distutils.version import StrictVersion
 
 # for debugging dataframes printed to console
 pd.set_option('min_rows', 10)
@@ -39,6 +38,7 @@ def executeQuery(query):
     value_columns = ['avg_value', 'q95_value', 'min_value', 'max_value']
     for v in value_columns:
         df[v] = df[v].astype('float')
+
     return df
 
 
@@ -57,11 +57,11 @@ def get_cpu_metrics():
 
 
 def trim_and_group(df, op='avg_value'):
-    new_df = df[['version', 'metric', 'namespace', op, 'range']].copy(deep=True)
-    new_df = new_df.groupby(by=['version', 'range', 'metric', 'namespace']).sum()  # sum values of each namespace
-    new_df.sort_values(by=[op], inplace=True)
-    new_df.reset_index(inplace=True)
-    return new_df
+    # new_df = df[['version', 'metric', 'namespace', op, 'range']].copy(deep=True)
+    df = df.groupby(by=['version', 'range', 'metric', 'namespace']).sum()  # sum values of each namespace
+    df.sort_values(by=['version', op], inplace=True, ascending=[True, True])
+    df.reset_index(inplace=True)
+    return df
 
 
 def get_range(df=pd.DataFrame()):
@@ -93,9 +93,10 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
             range=[0, y_max],
             fixedrange=True,
         ))
-    fig.update_xaxes({
-        'title': 'OCP Versions'
-    })
+    fig.update_xaxes(go.layout.XAxis(
+        title='OCP Versions',
+
+    ))
     # r = get_range(df)
     fig.update_layout(
         go.Layout(
@@ -158,6 +159,7 @@ def mem_response(op):
     df_mem = get_mem_metrics()
     y_max = pad_range(get_max(df_mem))
     df_mem = trim_and_group(df_mem, op=op)
+    print("df_mem: {}".format(df_mem))
     return generate_mem_value_fig(df_mem, op=op, y_max=y_max)
 
 
@@ -172,18 +174,15 @@ def cpu_response(op):
     return generate_cpu_value_fig(df_cpu, op, y_max)
 
 
-#
-# def debug():
-#     op = 'avg_value'
-#     df_mem = get_mem_metrics()
-#     mem_max = get_max(df_mem)
-#     print(type(mem_max))
-#     print("max value: \n{}".format(mem_max))
-#     df_mem = trim_and_group(df_mem, op)
-#     fig = generate_mem_value_fig(df=df_mem.iloc[0, 0], op=op)
-#     fig.show()
+def debug():
+    op = 'avg_value'
+    df_mem = get_mem_metrics()
+    mem_max = pad_range(get_max(df_mem))
+    df_mem = trim_and_group(df_mem, op)
+    fig = generate_mem_value_fig(df=df_mem, op=op, y_max=mem_max)
+    fig.show()
 
 
 if __name__ == '__main__':
-    # debug()
+    #debug()
     app.run_server(debug=True)
