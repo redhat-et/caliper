@@ -5,10 +5,13 @@ from dash.dependencies import Input, Output
 import pandas as pd
 import psycopg2
 from plotly import express as px
+from plotly import graph_objects as go
+import numpy as np
+
 
 # for debugging dataframes printed to console
 pd.set_option('min_rows', 10)
-pd.set_option('max_rows', 20)
+pd.set_option('max_rows', 100)
 pd.set_option('display.max_columns', 20)
 pd.set_option('display.width', 1098)
 
@@ -32,6 +35,10 @@ def executeQuery(query):
     rows = [row for row in cur.fetchall()]
     df = pd.DataFrame([[c for c in r] for r in rows])
     df.rename(inplace=True, columns=dict(enumerate(columns)))
+
+    value_columns = ['avg_value', 'q95_value', 'min_value', 'max_value']
+    for v in value_columns:
+        df[v] = df[v].astype('float')
     return df
 
 
@@ -49,16 +56,12 @@ def get_cpu_metrics():
     return executeQuery(query_cpu)
 
 
-def trim_and_group(df, value):
-    new_df = df[['version', 'metric', 'namespace', value, 'range']].copy(deep=True)
-    new_df = new_df.groupby(by=['version', 'metric', 'namespace', 'range']).agg({value: 'sum'})  # sum values of each namespace
-    new_df.sort_values(by=[value], inplace=True)
+def trim_and_group(df, op='avg_value'):
+    new_df = df[['version', 'metric', 'namespace', op, 'range']].copy(deep=True)
+    new_df = new_df.groupby(by=['version', 'range', 'metric', 'namespace']).sum()  # sum values of each namespace
+    new_df.sort_values(by=[op], inplace=True)
     new_df.reset_index(inplace=True)
     return new_df
-
-
-def get_metric():
-    print()
 
 
 def get_range(df=pd.DataFrame()):
@@ -66,39 +69,55 @@ def get_range(df=pd.DataFrame()):
     return ret
 
 
-def generate_mem_value_fig(df=pd.DataFrame(), op='', y_max=100):
+def get_max(df=pd.DataFrame()):
+    df_summed = df.groupby(by=['version']).sum()
+    m = max(df_summed.select_dtypes(include='float64').max())
+    return m
+
+
+def pad_range(r=0):
+    return r * 1.1
+
+
+def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     fig = px.bar(
         data_frame=df,
         x='version',
         y=op,
         color='namespace',
-        range_y=[0, y_max]
     )
-    fig.update_yaxes({
-        'ticksuffix': 'Mb',
-        'title': 'OCP Namespaces',
-    })
+    fig.update_yaxes(
+        go.layout.YAxis(
+            # ticksuffix='Mb',
+            # tickformat=':f',
+            range=[0, y_max],
+            fixedrange=True,
+        ))
     fig.update_xaxes({
         'title': 'OCP Versions'
     })
-    r = get_range(df)
+    # r = get_range(df)
     fig.update_layout(
-        {'title': 'Memory Usage by Namespace over {}'.format(r)}
+        go.Layout(
+            title='Memory usage by namespace over TIME',
+        )
     )
     return fig
 
 
-def generate_cpu_value_fig(df=pd.DataFrame(), op=''):
+def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     fig = px.bar(
         data_frame=df,
         x='version',
         y=op,
         color='namespace'
     )
-    fig.update_yaxes({
-        'ticksuffix': 'ns',
-        'title': 'OCP Namespaces'
-    })
+    fig.update_yaxes(go.layout.YAxis(
+        ticksuffix='ns',
+        title='OCP Namespaces',
+        range=[0, y_max],
+        fixedrange=True,
+    ))
     fig.update_xaxes({
         'title': 'OCP Versions'
     })
@@ -114,7 +133,6 @@ radio_options = [
     {'label': '95th-%', 'value': 'q95_value'},
     {'label': 'Min', 'value': 'min_value'},
     {'label': 'Max', 'value': 'max_value'},
-    {'label': 'Instant', 'value': 'inst_value'},
 ]
 
 app = dash.Dash(__name__)
@@ -138,9 +156,9 @@ app.layout = html.Div(children=[
 )
 def mem_response(op):
     df_mem = get_mem_metrics()
-    df_mem = trim_and_group(df_mem, op)
-    fig = generate_mem_value_fig(df_mem, op)
-    return fig
+    y_max = pad_range(get_max(df_mem))
+    df_mem = trim_and_group(df_mem, op=op)
+    return generate_mem_value_fig(df_mem, op=op, y_max=y_max)
 
 
 @app.callback(
@@ -149,17 +167,21 @@ def mem_response(op):
 )
 def cpu_response(op):
     df_cpu = get_cpu_metrics()
+    y_max = pad_range(get_max(df_cpu))
     df_cpu = trim_and_group(df_cpu, op)
-    fig = generate_cpu_value_fig(df_cpu, op)
-    return fig
+    return generate_cpu_value_fig(df_cpu, op, y_max)
 
 
-def debug():
-    op = 'avg_value'
-    df_mem = get_mem_metrics()
-    df_mem = trim_and_group(df_mem, op)
-    fig = generate_mem_value_fig(df_mem, op)
-    fig.show()
+#
+# def debug():
+#     op = 'avg_value'
+#     df_mem = get_mem_metrics()
+#     mem_max = get_max(df_mem)
+#     print(type(mem_max))
+#     print("max value: \n{}".format(mem_max))
+#     df_mem = trim_and_group(df_mem, op)
+#     fig = generate_mem_value_fig(df=df_mem.iloc[0, 0], op=op)
+#     fig.show()
 
 
 if __name__ == '__main__':
