@@ -6,11 +6,13 @@ import pandas as pd
 import psycopg2
 from plotly import express as px
 from plotly import graph_objects as go
+import yaml
+import numpy
 from distutils.version import StrictVersion
 
 # for debugging dataframes printed to console
 pd.set_option('min_rows', 10)
-pd.set_option('max_rows', 100)
+pd.set_option('max_rows', 500)
 pd.set_option('display.max_columns', 20)
 pd.set_option('display.width', 1098)
 
@@ -25,6 +27,19 @@ conn = psycopg2.connect(
     password="password"
 )
 
+with open('component-mappings.yaml', 'r') as file:
+    group_config = yaml.load(file, Loader=yaml.FullLoader)
+    file.close()
+
+
+def assign_groupings(df=pd.DataFrame()):
+    groups = numpy.empty(len(df), dtype=object)
+    df.insert(len(df.columns), 'group', groups)
+    for grp, namespaces in group_config.items():
+        for ns in namespaces:
+            df.loc[df['namespace'] == ns, ['group']] = grp
+    return df
+
 
 def executeQuery(query):
     cur = conn.cursor()
@@ -38,7 +53,7 @@ def executeQuery(query):
     value_columns = ['avg_value', 'q95_value', 'min_value', 'max_value']
     for v in value_columns:
         df[v] = df[v].astype('float')
-
+    df = assign_groupings(df)
     return df
 
 
@@ -46,27 +61,24 @@ def get_mem_metrics():
     query_mem = """
     SELECT * FROM collated_metrics WHERE metric = 'container_memory_usage_bytes';
     """
-    return executeQuery(query_mem)
+    df = executeQuery(query_mem)
+    return df
 
 
 def get_cpu_metrics():
     query_cpu = """
     SELECT * FROM collated_metrics WHERE metric = 'container_cpu_usage_seconds_total';
     """
-    return executeQuery(query_cpu)
-
-
-def trim_and_group(df, op='avg_value'):
-    # new_df = df[['version', 'metric', 'namespace', op, 'range']].copy(deep=True)
-    df = df.groupby(by=['version', 'range', 'metric', 'namespace']).sum()  # sum values of each namespace
-    df.sort_values(by=['version', op], inplace=True, ascending=[True, True])
-    df.reset_index(inplace=True)
+    df = executeQuery(query_cpu)
     return df
 
 
-def get_range(df=pd.DataFrame()):
-    ret = df.loc[[0], ['range']].squeeze()
-    return ret
+def trim_and_group(df, op='avg_value'):
+    df = df.groupby(by=['version', 'group'], sort=True, as_index=False).sum()
+    print(df)
+    df = df.groupby(by=['version'], sort=True, as_index=False).apply(lambda frame: frame.sort_values(by=[op], inplace=False))
+    df.reset_index(inplace=True)
+    return df
 
 
 def get_max(df=pd.DataFrame()):
@@ -84,7 +96,7 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
         data_frame=df,
         x='version',
         y=op,
-        color='namespace',
+        color='group',
     )
     fig.update_yaxes(
         go.layout.YAxis(
@@ -95,9 +107,7 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
         ))
     fig.update_xaxes(go.layout.XAxis(
         title='OCP Versions',
-
     ))
-    # r = get_range(df)
     fig.update_layout(
         go.Layout(
             title='Memory usage by namespace over TIME',
@@ -111,7 +121,7 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
         data_frame=df,
         x='version',
         y=op,
-        color='namespace'
+        color='group'
     )
     fig.update_yaxes(go.layout.YAxis(
         ticksuffix='ns',
@@ -122,9 +132,8 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     fig.update_xaxes({
         'title': 'OCP Versions'
     })
-    r = get_range(df)
     fig.update_layout(
-        {'title': 'CPU Usage by Namespace over {}'.format(r)}
+        {'title': 'CPU Usage by Namespace over {}'.format("TIME")}
     )
     return fig
 
@@ -159,7 +168,6 @@ def mem_response(op):
     df_mem = get_mem_metrics()
     y_max = pad_range(get_max(df_mem))
     df_mem = trim_and_group(df_mem, op=op)
-    print("df_mem: {}".format(df_mem))
     return generate_mem_value_fig(df_mem, op=op, y_max=y_max)
 
 
@@ -169,6 +177,7 @@ def mem_response(op):
 )
 def cpu_response(op):
     df_cpu = get_cpu_metrics()
+    print()
     y_max = pad_range(get_max(df_cpu))
     df_cpu = trim_and_group(df_cpu, op)
     return generate_cpu_value_fig(df_cpu, op, y_max)
@@ -184,5 +193,5 @@ def debug():
 
 
 if __name__ == '__main__':
-    #debug()
+    # debug()
     app.run_server(debug=True)
