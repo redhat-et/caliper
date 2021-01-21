@@ -20,6 +20,8 @@ openshift-core:
   - openshift-marketplace
   - openshift-operator-lifecycle-manager
   - openshift-image-registry
+  - openshift-service-catalog-apiserver-operator
+  - openshift-service-catalog-controller-manager-operator
 etcd:
   - openshift-etcd
   - openshift-etcd-operator
@@ -45,6 +47,4 @@ openshift-kubernetes-engine:
 monitoring:
   - openshift-monitoring
   - openshift-insights
-service-catalog:
-  - openshift-service-catalog-apiserver-operator
-  - openshift-service-catalog-controller-manager-operator
+

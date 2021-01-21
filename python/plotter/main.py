@@ -1,14 +1,13 @@
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
-from dash.dependencies import Input, Output
+import numpy
 import pandas as pd
 import psycopg2
+import yaml
+from dash.dependencies import Input, Output
 from plotly import express as px
 from plotly import graph_objects as go
-import yaml
-import numpy
-from distutils.version import StrictVersion
 
 # for debugging dataframes printed to console
 pd.set_option('min_rows', 10)
@@ -31,6 +30,27 @@ with open('component-mappings.yaml', 'r') as file:
     group_config = yaml.load(file, Loader=yaml.FullLoader)
     file.close()
 
+value_columns = ['q95_value', 'avg_value', 'min_value', 'max_value']
+
+
+def db_numeric_to_float(df):
+    for v in value_columns:
+        df[v] = df[v].astype('float')
+    df = assign_groupings(df)
+    return df
+
+
+def df_mem_bytes_to_gigabytes(df):
+    for v in value_columns:
+        df[v] = df[v] / 10.0 ** 9
+    return df
+
+
+def df_seconds_to_hours(df):
+    for v in value_columns:
+        df[v] = df[v] / (60 * 60)
+    return df
+
 
 def assign_groupings(df=pd.DataFrame()):
     groups = numpy.empty(len(df), dtype=object)
@@ -49,11 +69,7 @@ def executeQuery(query):
     rows = [row for row in cur.fetchall()]
     df = pd.DataFrame([[c for c in r] for r in rows])
     df.rename(inplace=True, columns=dict(enumerate(columns)))
-
-    value_columns = ['avg_value', 'q95_value', 'min_value', 'max_value']
-    for v in value_columns:
-        df[v] = df[v].astype('float')
-    df = assign_groupings(df)
+    df = db_numeric_to_float(df)
     return df
 
 
@@ -62,6 +78,7 @@ def get_mem_metrics():
     SELECT * FROM collated_metrics WHERE metric = 'container_memory_usage_bytes';
     """
     df = executeQuery(query_mem)
+    df = df_mem_bytes_to_gigabytes(df)
     return df
 
 
@@ -70,12 +87,14 @@ def get_cpu_metrics():
     SELECT * FROM collated_metrics WHERE metric = 'container_cpu_usage_seconds_total';
     """
     df = executeQuery(query_cpu)
+    df = df_seconds_to_hours(df)
     return df
 
 
 def trim_and_group(df, op='avg_value'):
     df = df.groupby(by=['version', 'group'], sort=True, as_index=False).sum()
-    df = df.groupby(by=['version'], sort=True, as_index=False).apply(lambda frame: frame.sort_values(by=[op], inplace=False))
+    df = df.groupby(by=['version'], sort=True, as_index=False).apply(
+        lambda frame: frame.sort_values(by=[op], inplace=False))
     df.reset_index(inplace=True)
     return df
 
@@ -96,12 +115,12 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
         x='version',
         y=op,
         color='group',
+        title='OCP Memory Usage by Groupings vs OCP Version',
     )
     fig.update_yaxes(
         go.layout.YAxis(
-            title='Bytes Total per OCP Component Group',
-            tickformat='e',
-            ticksuffix='B',
+            title='Net Memory Usage by Component: Gigabytes',
+            ticksuffix='Gb',
             range=[0, y_max],
             fixedrange=True,
         ))
@@ -110,9 +129,9 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     ))
     fig.update_layout(
         go.Layout(
-            title='Memory usage by namespace over TIME',
             legend=go.layout.Legend(
-                title='OCP Component Groups'
+                title='OCP Component Groups',
+                traceorder='reversed',
             ),
         )
     )
@@ -124,11 +143,12 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
         data_frame=df,
         x='version',
         y=op,
-        color='group'
+        color='group',
+        title='CPU Usage by Time vs OCP Version'
     )
     fig.update_yaxes(go.layout.YAxis(
-        ticksuffix='ns',
-        title='OCP Namespaces',
+        ticksuffix='hrs',
+        title='Net CPU Time by Component in Hours',
         range=[0, y_max],
         fixedrange=True,
     ))
@@ -136,30 +156,41 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
         'title': 'OCP Versions'
     })
     fig.update_layout(
-        {'title': 'CPU Usage by Namespace over {}'.format("TIME")}
+        {
+            'legend': {
+                'traceorder': 'reversed',
+            },
+        }
     )
     return fig
 
 
 def generate_mem_line(df=pd.DataFrame()):
-    groups = df.groupby(by='group')
     fig = go.Figure()
     fig.update_layout(go.Layout(
-        title=''
+        title='95th Quantile of Memory Usage Trends by Version',
+        legend=go.layout.Legend(
+            traceorder='grouped+reversed',
+        )
     ))
     fig.update_xaxes(go.layout.XAxis(
         title='OCP Version'
     ))
     fig.update_yaxes(go.layout.YAxis(
-        title='Total Bytes consumed in 1 hour'
+        title='Net Memory Consumed by Component in Gigabytes',
+        ticksuffix='Gb'
     ))
+
+    groups = df.groupby(by='group', sort=True)
+    for n, g in groups:
+        g.sort_values(by='q95_value', ascending=False)
     for name, g in groups:
-        print(g)
         fig.add_trace(
             go.Scatter(
                 name=name,
                 x=g['version'],
-                y=g['avg_value']
+                y=g['q95_value'],
+                legendgroup=1,
             )
         )
 
@@ -177,17 +208,17 @@ app = dash.Dash(__name__)
 app.layout = html.Div(children=[
     html.H1(children='Caliper'),
     html.Div(children=[
-            dcc.Graph(id='memory-graph'),
-            dcc.RadioItems(id='memory-op-radio', value='avg_value', options=radio_options),
-        ]
+        dcc.Graph(id='memory-graph'),
+        dcc.RadioItems(id='memory-op-radio', value='q95_value', options=radio_options),
+    ]
     ),
     html.Div(children=[
         dcc.Graph(id='cpu-graph'),
-        dcc.RadioItems(id='cpu-op-radio', value='avg_value', options=radio_options)
+        dcc.RadioItems(id='cpu-op-radio', value='q95_value', options=radio_options)
     ]),
     html.Div(children=[
         dcc.Graph(id='mem-line'),
-        dcc.Input(id='mem-line-input', value='', type='hidden')
+        dcc.Input(id='mem-line-input', value='q95_value', type='hidden', )
     ])
 ])
 
@@ -216,14 +247,12 @@ def cpu_response(op):
 
 @app.callback(
     Output(component_id='mem-line', component_property='figure'),
-    Input(component_id='mem-line', component_property='value')
+    Input(component_id='mem-line-input', component_property='value')
 )
-def mem_line_response(noop):
+def mem_line_response(op):
     df_mem = get_mem_metrics()
-    df_mem = trim_and_group(df_mem, 'avg_value')
+    df_mem = trim_and_group(df_mem, op)
     return generate_mem_line(df_mem)
-
-
 
 
 def debug():
