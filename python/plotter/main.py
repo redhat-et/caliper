@@ -75,7 +75,6 @@ def get_cpu_metrics():
 
 def trim_and_group(df, op='avg_value'):
     df = df.groupby(by=['version', 'group'], sort=True, as_index=False).sum()
-    print(df)
     df = df.groupby(by=['version'], sort=True, as_index=False).apply(lambda frame: frame.sort_values(by=[op], inplace=False))
     df.reset_index(inplace=True)
     return df
@@ -100,8 +99,9 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     )
     fig.update_yaxes(
         go.layout.YAxis(
-            # ticksuffix='Mb',
-            # tickformat=':f',
+            title='Bytes Total per OCP Component Group',
+            tickformat='e',
+            ticksuffix='B',
             range=[0, y_max],
             fixedrange=True,
         ))
@@ -111,6 +111,9 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     fig.update_layout(
         go.Layout(
             title='Memory usage by namespace over TIME',
+            legend=go.layout.Legend(
+                title='OCP Component Groups'
+            ),
         )
     )
     return fig
@@ -138,6 +141,31 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     return fig
 
 
+def generate_mem_line(df=pd.DataFrame()):
+    groups = df.groupby(by='group')
+    fig = go.Figure()
+    fig.update_layout(go.Layout(
+        title=''
+    ))
+    fig.update_xaxes(go.layout.XAxis(
+        title='OCP Version'
+    ))
+    fig.update_yaxes(go.layout.YAxis(
+        title='Total Bytes consumed in 1 hour'
+    ))
+    for name, g in groups:
+        print(g)
+        fig.add_trace(
+            go.Scatter(
+                name=name,
+                x=g['version'],
+                y=g['avg_value']
+            )
+        )
+
+    return fig
+
+
 radio_options = [
     {'label': 'Average', 'value': 'avg_value'},
     {'label': '95th-%', 'value': 'q95_value'},
@@ -156,6 +184,10 @@ app.layout = html.Div(children=[
     html.Div(children=[
         dcc.Graph(id='cpu-graph'),
         dcc.RadioItems(id='cpu-op-radio', value='avg_value', options=radio_options)
+    ]),
+    html.Div(children=[
+        dcc.Graph(id='mem-line'),
+        dcc.Input(id='mem-line-input', value='', type='hidden')
     ])
 ])
 
@@ -177,10 +209,21 @@ def mem_response(op):
 )
 def cpu_response(op):
     df_cpu = get_cpu_metrics()
-    print()
     y_max = pad_range(get_max(df_cpu))
     df_cpu = trim_and_group(df_cpu, op)
     return generate_cpu_value_fig(df_cpu, op, y_max)
+
+
+@app.callback(
+    Output(component_id='mem-line', component_property='figure'),
+    Input(component_id='mem-line', component_property='value')
+)
+def mem_line_response(noop):
+    df_mem = get_mem_metrics()
+    df_mem = trim_and_group(df_mem, 'avg_value')
+    return generate_mem_line(df_mem)
+
+
 
 
 def debug():
