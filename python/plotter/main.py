@@ -15,9 +15,6 @@ pd.set_option('max_rows', 500)
 pd.set_option('display.max_columns', 20)
 pd.set_option('display.width', 1098)
 
-# TODO
-# grouping, Y-axis value, x-axis ordering, hard-min/max
-
 conn = psycopg2.connect(
     host="localhost",
     port="5432",
@@ -99,7 +96,7 @@ def trim_and_group(df, op='avg_value'):
     return df
 
 
-def get_max(df=pd.DataFrame()):
+def get_max_bar_height(df=pd.DataFrame()):
     df_summed = df.groupby(by=['version']).sum()
     m = max(df_summed.select_dtypes(include='float64').max())
     return m
@@ -109,17 +106,17 @@ def pad_range(r=0):
     return r * 1.1
 
 
-def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
+def generate_mem_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     fig = px.bar(
         data_frame=df,
         x='version',
-        y=op,
+        y=['group', op],
         color='group',
-        title='OCP Memory Usage by Groupings vs OCP Version',
+        title='Cluster Memory Usage by OCP Version',
     )
     fig.update_yaxes(
         go.layout.YAxis(
-            title='Net Memory Usage by Component: Gigabytes',
+            title='Net Memory Usage by Groups In Gigabytes',
             ticksuffix='Gb',
             range=[0, y_max],
             fixedrange=True,
@@ -138,17 +135,17 @@ def generate_mem_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     return fig
 
 
-def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
+def generate_cpu_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     fig = px.bar(
         data_frame=df,
         x='version',
         y=op,
         color='group',
-        title='CPU Usage by Time vs OCP Version'
+        title='Cluster CPU Time by OCP Version'
     )
     fig.update_yaxes(go.layout.YAxis(
-        ticksuffix='hrs',
-        title='Net CPU Time by Component in Hours',
+        ticksuffix='hs',
+        title='Net CPU Time in Hours',
         range=[0, y_max],
         fixedrange=True,
     ))
@@ -158,6 +155,7 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     fig.update_layout(
         {
             'legend': {
+                'title': '',
                 'traceorder': 'reversed',
             },
         }
@@ -165,31 +163,67 @@ def generate_cpu_value_fig(df=pd.DataFrame(), op='avg_value', y_max=0.0):
     return fig
 
 
-def generate_mem_line(df=pd.DataFrame()):
+def generate_mem_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     fig = go.Figure()
-    fig.update_layout(go.Layout(
-        title='95th Quantile of Memory Usage Trends by Version',
-        legend=go.layout.Legend(
-            traceorder='grouped+reversed',
-        )
-    ))
-    fig.update_xaxes(go.layout.XAxis(
-        title='OCP Version'
-    ))
-    fig.update_yaxes(go.layout.YAxis(
-        title='Net Memory Consumed by Component in Gigabytes',
-        ticksuffix='Gb'
-    ))
+    fig.update_layout({
+        "title": 'Memory Usage Trends by OCP Version',
+        "legend": {
+            "traceorder": 'grouped+reversed',
+        }
+    })
+    fig.update_yaxes({
+        "title": 'Net Memory Consumed in Gigabytes',
+        "ticksuffix": 'Gb',
+        "fixedrange": True,
+        "range": [0, y_max]
+    })
+    fig.update_xaxes({
+        "title": 'OCP Version'
+    })
 
     groups = df.groupby(by='group', sort=True)
     for n, g in groups:
-        g.sort_values(by='q95_value', ascending=False)
+        g.sort_values(by=op, ascending=False)
     for name, g in groups:
         fig.add_trace(
             go.Scatter(
                 name=name,
                 x=g['version'],
-                y=g['q95_value'],
+                y=g[op],
+                legendgroup=1,
+            )
+        )
+
+    return fig
+
+
+def generate_cpu_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
+    fig = go.Figure()
+    fig.update_layout({
+        "title": 'CPU Time Trends by OCP Version',
+        "legend": {
+            "traceorder": 'grouped+reversed',
+        }
+    })
+    fig.update_yaxes({
+        "title": 'Net CPU Time in Hours',
+        "ticksuffix": 'hs',
+        "fixedrange": True,
+        "range": [0, y_max]
+    })
+    fig.update_xaxes({
+        "title": 'OCP Version'
+    })
+
+    groups = df.groupby(by='group', sort=True)
+    for n, g in groups:
+        g.sort_values(by=op, ascending=False)
+    for name, g in groups:
+        fig.add_trace(
+            go.Scatter(
+                name=name,
+                x=g['version'],
+                y=g[op],
                 legendgroup=1,
             )
         )
@@ -198,15 +232,16 @@ def generate_mem_line(df=pd.DataFrame()):
 
 
 radio_options = [
-    {'label': 'Average', 'value': 'avg_value'},
     {'label': '95th-%', 'value': 'q95_value'},
+    {'label': 'Average', 'value': 'avg_value'},
     {'label': 'Min', 'value': 'min_value'},
     {'label': 'Max', 'value': 'max_value'},
 ]
 
 app = dash.Dash(__name__)
 app.layout = html.Div(children=[
-    html.H1(children='Caliper'),
+    html.H1(children='Caliper - Basic Dashboard'),
+    html.H2(children='Metrics taken over 1 hour span from 6 (3/3) Node Clusters'),
     html.Div(children=[
         dcc.Graph(id='memory-graph'),
         dcc.RadioItems(id='memory-op-radio', value='q95_value', options=radio_options),
@@ -218,7 +253,11 @@ app.layout = html.Div(children=[
     ]),
     html.Div(children=[
         dcc.Graph(id='mem-line'),
-        dcc.Input(id='mem-line-input', value='q95_value', type='hidden', )
+        dcc.RadioItems(id='mem-line-input', value='q95_value', options=radio_options)
+    ]),
+    html.Div(children=[
+        dcc.Graph(id='cpu-line'),
+        dcc.RadioItems(id='cpu-line-input', value='q95_value', options=radio_options)
     ])
 ])
 
@@ -229,9 +268,9 @@ app.layout = html.Div(children=[
 )
 def mem_response(op):
     df_mem = get_mem_metrics()
-    y_max = pad_range(get_max(df_mem))
+    y_max = pad_range(get_max_bar_height(df_mem))
     df_mem = trim_and_group(df_mem, op=op)
-    return generate_mem_value_fig(df_mem, op=op, y_max=y_max)
+    return generate_mem_bar_fig(df_mem, op=op, y_max=y_max)
 
 
 @app.callback(
@@ -240,9 +279,9 @@ def mem_response(op):
 )
 def cpu_response(op):
     df_cpu = get_cpu_metrics()
-    y_max = pad_range(get_max(df_cpu))
+    y_max = pad_range(get_max_bar_height(df_cpu))
     df_cpu = trim_and_group(df_cpu, op)
-    return generate_cpu_value_fig(df_cpu, op, y_max)
+    return generate_cpu_bar_fig(df_cpu, op, y_max)
 
 
 @app.callback(
@@ -252,15 +291,27 @@ def cpu_response(op):
 def mem_line_response(op):
     df_mem = get_mem_metrics()
     df_mem = trim_and_group(df_mem, op)
-    return generate_mem_line(df_mem)
+    y_max = pad_range(df_mem['max_value'].max())
+    return generate_mem_line(df_mem, op, y_max)
+
+
+@app.callback(
+    Output(component_id='cpu-line', component_property='figure'),
+    Input(component_id='cpu-line-input', component_property='value')
+)
+def mem_line_response(op):
+    df_mem = get_cpu_metrics()
+    df_mem = trim_and_group(df_mem, op)
+    y_max = pad_range(df_mem['max_value'].max())
+    return generate_cpu_line(df_mem, op, y_max)
 
 
 def debug():
     op = 'avg_value'
     df_mem = get_mem_metrics()
-    mem_max = pad_range(get_max(df_mem))
+    y_max = pad_range(get_max_bar_height(df_mem))
     df_mem = trim_and_group(df_mem, op)
-    fig = generate_mem_value_fig(df=df_mem, op=op, y_max=mem_max)
+    fig = generate_mem_bar_fig(df=df_mem, op=op, y_max=y_max)
     fig.show()
 
 
