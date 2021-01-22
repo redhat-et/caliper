@@ -220,7 +220,7 @@ func top(cfg Config) (PodMetrics, error) {
 				labelApp, _ := sample.Metric["label_app"]
 				podMetricHashTable[id].Namespace = string(ns)
 				podMetricHashTable[id].Pod = string(pod)
-				podMetricHashTable[id].Metric = metricToTitle(tm)
+				podMetricHashTable[id].Metric = tm
 				podMetricHashTable[id].LabelApp = string(labelApp)
 				podMetricHashTable[id].Range = cfg.Range
 				podMetricHashTable[id].QueryTime = now.Format(dbhandler.TimestampFormat)
@@ -248,16 +248,6 @@ func top(cfg Config) (PodMetrics, error) {
 	}
 
 	return podMetrics, nil
-}
-
-func metricToTitle(q string) string {
-	switch {
-	case strings.Contains(q, cpuMetric):
-		return "CPU in Nanoseconds"
-	case strings.Contains(q, memoryMetric):
-		return "Memory in Bytes"
-	}
-	return ""
 }
 
 const defaultRange = "10m"
