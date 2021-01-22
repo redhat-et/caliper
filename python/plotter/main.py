@@ -106,6 +106,19 @@ def pad_range(r=0):
     return r * 1.1
 
 
+def color_map(df=pd.DataFrame()):
+    cm = {}
+    colors = px.colors.qualitative.G10
+    grp = df.groupby(by='group', as_index=True, sort=True)
+    i = 0
+    for g in grp.groups:
+        print(g)
+        cm[g] = colors[i]
+        i += 1
+    return cm
+
+
+
 def generate_mem_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     fig = px.bar(
         data_frame=df,
@@ -113,6 +126,7 @@ def generate_mem_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
         y=['group', op],
         color='group',
         title='Cluster Memory Usage by OCP Version',
+        color_discrete_map=color_map(df),
     )
     fig.update_yaxes(
         go.layout.YAxis(
@@ -141,7 +155,8 @@ def generate_cpu_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
         x='version',
         y=op,
         color='group',
-        title='Cluster CPU Time by OCP Version'
+        title='Cluster CPU Time by OCP Version',
+        color_discrete_map=color_map(df),
     )
     fig.update_yaxes(go.layout.YAxis(
         ticksuffix='hs',
@@ -153,13 +168,14 @@ def generate_cpu_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
         'title': 'OCP Versions'
     })
     fig.update_layout(
-        {
-            'legend': {
-                'title': '',
-                'traceorder': 'reversed',
-            },
-        }
+        go.Layout(
+            legend=go.layout.Legend(
+                title='OCP Component Groups',
+                traceorder='reversed',
+            )
+        )
     )
+
     return fig
 
 
@@ -169,7 +185,8 @@ def generate_mem_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
         "title": 'Memory Usage Trends by OCP Version',
         "legend": {
             "traceorder": 'grouped+reversed',
-        }
+        },
+        # go.layout.Legend()
     })
     fig.update_yaxes({
         "title": 'Net Memory Consumed in Gigabytes',
@@ -184,6 +201,7 @@ def generate_mem_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     groups = df.groupby(by='group', sort=True)
     for n, g in groups:
         g.sort_values(by=op, ascending=False)
+    cm = color_map(df)
     for name, g in groups:
         fig.add_trace(
             go.Scatter(
@@ -191,6 +209,7 @@ def generate_mem_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
                 x=g['version'],
                 y=g[op],
                 legendgroup=1,
+                marker={'color': cm[name]},
             )
         )
 
@@ -218,6 +237,7 @@ def generate_cpu_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     groups = df.groupby(by='group', sort=True)
     for n, g in groups:
         g.sort_values(by=op, ascending=False)
+    cm = color_map(df)
     for name, g in groups:
         fig.add_trace(
             go.Scatter(
@@ -225,6 +245,7 @@ def generate_cpu_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
                 x=g['version'],
                 y=g[op],
                 legendgroup=1,
+                marker={'color': cm[name]},
             )
         )
 
