@@ -175,7 +175,6 @@ def generate_cpu_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
             )
         )
     )
-
     return fig
 
 
@@ -186,7 +185,6 @@ def generate_mem_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
         "legend": {
             "traceorder": 'grouped+reversed',
         },
-        # go.layout.Legend()
     })
     fig.update_yaxes({
         "title": 'Net Memory Consumed in Gigabytes',
@@ -262,7 +260,7 @@ radio_options = [
 app = dash.Dash(__name__)
 app.layout = html.Div(children=[
     html.H1(children='Caliper - Basic Dashboard'),
-    html.H2(children='Metrics taken over 1 hour span from 6 (3/3) Node Clusters'),
+    html.H2(children='Metrics taken over 1 hour span from Idle 6-Node (3 & 3) Clusters'),
     html.Div(children=[
         dcc.Graph(id='memory-graph'),
         dcc.RadioItems(id='memory-op-radio', value='q95_value', options=radio_options),
