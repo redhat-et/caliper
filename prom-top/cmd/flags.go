@@ -46,11 +46,11 @@ character.
     y = years
 The time format concatenates the int and unit: ##unit, e.g. 10 minutes == 10m`
 
-const queryHelp = `Designate the query type to execute
+const aggregationHelp = `Designate the aggregation to apply to query
 One of:
 	"i"  most recent, instantaneous metric values
-	"q"  95th quantile from last 10min of metric values
-	"a"  average from the last 10min of metric values
+	"q"  95th quantile from last $range of metric values
+	"a"  average from the last $range of metric values
 Example:
 	$ prom-top -t i # query instant vectors`
 
@@ -59,7 +59,7 @@ func init() {
 	kubeconfigDefault := filepath.Join(home, `.kube/config`)
 
 	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "Path to kubeconfig file")
-	pflag.StringVarP(&queryType, "type", "t", "", queryHelp)
+	pflag.StringVarP(&queryType, "agg", "a", "", aggregationHelp)
 	pflag.StringVar(&queryRange, "range", "", rangeHelp)
 	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw, postgres]")
 	pflag.StringVarP(&version, "ocp-version", "v", "", "the version of ocp executed against")

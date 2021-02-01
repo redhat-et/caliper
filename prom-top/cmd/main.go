@@ -34,8 +34,8 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
-	"github.com/redhat-et/caliper/pkg/dbhandler"
-	"github.com/redhat-et/caliper/pkg/top"
+	"github.com/redhat-et/caliper/prom-top/pkg/dbhandler"
+	"github.com/redhat-et/caliper/prom-top/pkg/top"
 )
 
 func hasBearerToken(cfg *rest.Config) bool {
@@ -64,7 +64,7 @@ func main() {
 	pflag.Parse()
 	defer klog.Flush()
 
-	if version == "" {
+	if outFormat == "postgres" && version == "" {
 		klog.Info("version flag (-v | --ocp-version) required")
 		os.Exit(1)
 	}

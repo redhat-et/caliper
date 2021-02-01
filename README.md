@@ -1,68 +1,48 @@
 # Caliper [WIP]
 
-**// // // // // // ATTENTION: CONSTRUCTION AREA! // // // // // //**
-
 ## Overview
 
-This project consists of 2 components.
+Caliper's objective is to provide a live, cross-version analysis of Openshift CPU, Memory, and Network usage.  Users (or automation) can execute a simple CLI tool to query, aggregate, and store metrics in a database.  A long lived service will read from the database and host a dashboard of plots comparing resource usage across versions.
 
-- `prom-top`: takes a kubeconfig and queries the Openshift cluster's Prometheus endpoint for usage metrics, reported as scalar values.
- Current query types are _average_ and _quantile(.95)_ for `--span` of time, and _instant_ which reports the latest instantaneous measurements.
- Presently only outputs for stdout.  **TODO: write to database**
-- `plotter`: reads from a database and renders the information such that OCP components may be compared against each other across versions 
-in order to track resource consumption changes.
+Unlike `kubectl top`, Caliper aggregates its results from Prometheus time-series, providing a more accurate picture of resource consumption.  Where `kubectl top` takes an instantaneous reading from [metrics-server](https://github.com/kubernetes-sigs/metrics-server), Caliper calculates 95th%, average, min, and max from a user-defined time range (default 10min). 
 
-### General Pre-reqs
+This project consists of 2 components and has a dependency on a Postgres database.
 
-- A dotenv (`.env`) must be present in the same directory as `prom-top` and `plotter` containing db connection information.  This 
-is to simplify database access to for both apps.  An example file is provided at `./.env.example` in the repo root.
+- `prom-top`: a CLI tool that queries a Prometheus API endpoint in a OCP cluster.  Results are printed to shell by default or optionally written to a Postgres DB. 
+- `plotter`: reads `prom-top` results from a Postgres DB and servers a plot dashboard over http. Data is presented as  
+- Postgres: persists results from `prom-top` for later use by `plotter`
 
-### Prom-top:
 
-**Prereqs**
 
-- A running OCP cluster
-- You must be logged into the cluster. Prometheus queries require a bearer token which is granted at login.  This can also be 
-accomplished by created a ServiceAccount and granting it the requisite permissions for accessing the metrics API. Documentation
-will eventually be added, for now this is purely experimental.
+## Deploy
 
-**Run**
+### Build
 
-1. Login to your OCP cluster:
-`$ oc login $SERVER -kubeadmin -p $KUBEADMIN-PASSWORD`
-1. Prom-top needs a kubeconfig.  This can be passed as an arg (`--kubeconfig`), set as and env var (`KUBECONFIG`), or assumed to be in the
-default location (`$HOME/.kube/config`). 
+Build workflows are driven by `make`.  By default, it will build to container images. Do deactivate container builds and compile locally, pass `DOCKER=0` as a `make` variable.
 
-    Assuming your config is at the default:
-    
-    `$ ./bin/prom-top`
-    
-### Plotter:
+- `make` / `make all` / `make build`: builds prom-top and plotter from source and produces container images for both.
+- `make prom-top`: compiles prom-top into a container image
+- `make plotter`: compiles prom-top into a container image
+- `make up`: uses docker-compose script to deploy a optionally build, then deploy a plotter and Postgres container.  If `DOCKER != 0`, then only starts the local plotter binary.  Use `ctrl-C` to stop the processes.
+- `make clean`: deletes build artifacts (container images or local binaries, depending you `DOCKER=0`)
 
-Plotter, like prom-top, is under development.  The app is written in Python3 and utilizes the Plotly library to process.
-It queries the database and generates a stacked bar chart from the results.  At present, it generates a single chart describing
-the percentage of CPU time consumed by each component vs the OCP version.
+## Run
 
-**Prereqs**
+#### Prereqs
 
-- A postgres database table, with columns configured as shown below.  Only **type** is required. 
+1. A running, reachable Openshift cluster
 
-```
-                             Table "public.metrics"
-     Column      |            Type             | Collation | Nullable | Default
------------------+-----------------------------+-----------+----------+---------
- version         | text                        |           | not null |
- metric          | text                        |           |          |
- pod             | text                        |           |          |
- namespace       | text                        |           |          |
- label_app       | text                        |           |          |
- query_time      | timestamp without time zone |           |          |
- value           | numeric                     |           |          |
- aggregator_code | text                        |           |          |
- node            | text                        |           |          |
-```
+1. A logged in user account to that cluster. 
 
-**Run**
+   - This is because promQL queries require a bearer token.  Later manifests will be added to describe an in-cluster agent with the appropriate perms to query the Prometheus API endpoint.
 
-1. Ensure your working dir contains the `.env` file
-1. execute `$ python python/plotter/main.py`
+## Setup and Execute
+
+To generate plots, Plotter and Postgres must be running.
+
+1. `make up` will deploy plotter and postgres.
+1. In a browser, enter the address `localhost:8050` to verify plotter is running and is reachable.
+1. *Optionally*, dry-run prom-top by printing the metric data to stdout.  This is the default action for the app:  `./bin/prom-top`
+1. Execute prom-top with args: `./bin/prom-top -v $OPENSHIFT_CLUSTER_VERSION -o postgres`
+1. On the plotter browser page, hit refresh.  You should now see the aggregated metric data represented on the plots.
+

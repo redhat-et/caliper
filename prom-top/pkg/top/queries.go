@@ -49,7 +49,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
-	"github.com/redhat-et/caliper/pkg/dbhandler"
+	"github.com/redhat-et/caliper/prom-top/pkg/dbhandler"
 )
 
 type Config struct {

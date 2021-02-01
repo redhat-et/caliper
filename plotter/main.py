@@ -5,6 +5,8 @@ import numpy
 import pandas as pd
 import psycopg2
 import yaml
+import os
+from dotenv import load_dotenv
 from dash.dependencies import Input, Output
 from plotly import express as px
 from plotly import graph_objects as go
@@ -15,12 +17,18 @@ pd.set_option('max_rows', 500)
 pd.set_option('display.max_columns', 20)
 pd.set_option('display.width', 1098)
 
+load_dotenv()
+pg_host = os.getenv('PGHOST')
+pg_port = os.getenv('PGPORT')
+pg_database = os.getenv('PGDATABASE')
+pg_user = os.getenv('PGUSER')
+pg_password = os.getenv('PGPASSWORD')
 conn = psycopg2.connect(
-    host="localhost",
-    port="5432",
-    database="metric_data",
-    user="promtop",
-    password="password"
+    host=pg_host,
+    port=pg_port,
+    database=pg_database,
+    user=pg_user,
+    password=pg_password
 )
 
 with open('component-mappings.yaml', 'r') as file:
@@ -112,11 +120,9 @@ def color_map(df=pd.DataFrame()):
     grp = df.groupby(by='group', as_index=True, sort=True)
     i = 0
     for g in grp.groups:
-        print(g)
         cm[g] = colors[i]
         i += 1
     return cm
-
 
 
 def generate_mem_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
@@ -325,15 +331,5 @@ def mem_line_response(op):
     return generate_cpu_line(df_mem, op, y_max)
 
 
-def debug():
-    op = 'avg_value'
-    df_mem = get_mem_metrics()
-    y_max = pad_range(get_max_bar_height(df_mem))
-    df_mem = trim_and_group(df_mem, op)
-    fig = generate_mem_bar_fig(df=df_mem, op=op, y_max=y_max)
-    fig.show()
-
-
 if __name__ == '__main__':
-    # debug()
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=8050, host='0.0.0.0')

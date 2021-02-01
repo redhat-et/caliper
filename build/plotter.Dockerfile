@@ -11,21 +11,21 @@
 #WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #See the License for the specific language governing permissions and
 #limitations under the License.
+FROM python:3.9.1-slim
 
-FROM registry.redhat.io/ubi8/go-toolset:1.13.4 AS build
+ENV PATH=/root/.local/bin:$PATH
 
-ENV GOPATH=/opt/app-root/
+RUN \
+apt-get update -y && \
+apt install libpq-dev gcc -y
 
-WORKDIR $GOPATH/src/prom-top
+WORKDIR /usr/src/app
 
-# mount the repo root to work dir
-COPY --chown=1001:1 . .
+COPY ./requirements.txt ./
+RUN pip install -r requirements.txt
 
-RUN GOCACHE=/tmp/.cache GOOS=linux GOARCH=amd64 go build -o ./bin/prom-top ./cmd
+COPY . .
 
-# Run container image
-FROM registry.redhat.io/ubi8/ubi-minimal:8.2
+EXPOSE 8050
 
-COPY --from=build ./opt/app-root/src/prom-top/bin/prom-top /usr/local/bin/prom-top
-
-ENTRYPOINT ["prom-top"]
+CMD ["python", "main.py"]

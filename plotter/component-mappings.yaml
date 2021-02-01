@@ -1,25 +1,29 @@
 ---
-openshift-core:
+apiserver:
   - openshift-apiserver
   - openshift-apiserver-operator
+authentication:
   - openshift-authentication
   - openshift-authentication-operator
   - openshift-cloud-credential-operator
-  - openshift-cluster-machine-approver
-  - openshift-cluster-node-tuning-operator
-  - openshift-cluster-samples-operator
-  - openshift-cluster-storage-operator
-  - openshift-cluster-version
-  - openshift-config-operator
+ocp-core:
+  - openshift-marketplace
+  - openshift-operator-lifecycle-manager
+  - openshift-image-registry
   - openshift-console
   - openshift-console-operator
   - openshift-controller-manager
   - openshift-controller-manager-operator
+  - openshift-cluster-version
+  - openshift-config-operator
+  - openshift-cluster-storage-operator
+machine-manager:
+  - openshift-cluster-machine-approver
   - openshift-machine-api
   - openshift-machine-config-operator
-  - openshift-marketplace
-  - openshift-operator-lifecycle-manager
-  - openshift-image-registry
+  - openshift-cluster-node-tuning-operator
+  - openshift-cluster-samples-operator
+service-catalog:
   - openshift-service-catalog-apiserver-operator
   - openshift-service-catalog-controller-manager-operator
 etcd:
