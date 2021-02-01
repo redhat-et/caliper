@@ -23,6 +23,7 @@ GOARCH = amd64
 
 PROMTOP_TAG=prom-top:latest
 PLOTTER_TAG=plotter:latest
+TMP_DIR=./_build_promtop/
 
 # By default, run build containers.
 # set this to any non-0 value to build locally.
@@ -31,7 +32,6 @@ DOCKER=0
 .PHONY: all build
 all: build
 
-build: TMP_DIR=./_build_promtop/
 build: prom-top plotter
 
 # As a requirement for go modules, the go.mod and go.sum file should be a the repo's root dir, which complicates
@@ -41,7 +41,7 @@ build: prom-top plotter
 .PHONY: prom-top
 prom-top:
 ifeq (${DOCKER}, 0)
-	rm -rf $(TMP_DIR)
+	rm -rf ${TMP_DIR}
 	mkdir $(TMP_DIR)
 	cp -r ./prom-top $(TMP_DIR)
 	cp go.mod go.sum $(TMP_DIR)
