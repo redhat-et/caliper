@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/pflag"
+	"k8s.io/klog"
 )
 
 const kubeconfigEnv = "KUBECONFIG"
@@ -28,7 +29,7 @@ var (
 	kubeconfig string
 	queryType  string
 	queryRange string
-	outFormat  string
+	toDb       bool
 	version    string
 )
 
@@ -61,7 +62,7 @@ func init() {
 	pflag.StringVar(&kubeconfig, "kubeconfig", kubeconfigDefault, "Path to kubeconfig file")
 	pflag.StringVarP(&queryType, "agg", "a", "", aggregationHelp)
 	pflag.StringVar(&queryRange, "range", "", rangeHelp)
-	pflag.StringVarP(&outFormat, "output", "o", "raw", "query return format: [csv, raw, postgres]")
+	pflag.BoolVar(&toDb, "postgres", false, "when set, pushes output to postgres database configured in the .env file. --version flag required")
 	pflag.StringVarP(&version, "ocp-version", "v", "", "the version of ocp executed against")
 	pflag.Parse()
 
@@ -72,5 +73,10 @@ func init() {
 		if kc, ok := os.LookupEnv(kubeconfigEnv); ok {
 			kubeconfig = kc
 		}
+	}
+
+	if toDb && version == "" {
+		klog.Info("version flag (-v | --ocp-version) required")
+		os.Exit(1)
 	}
 }

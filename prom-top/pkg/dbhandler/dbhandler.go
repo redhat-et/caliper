@@ -42,7 +42,24 @@ type Row struct {
 	InstValue float64 `db:"inst_value"`
 }
 
-// ColumnsHeaders defines the expected headers for the metrics table and exists
+func (r *Row) String() string {
+	return fmt.Sprintf("%s [%s]{%s, %s, %s, %s} => {@%s, Q95(%f), AVG(%f), MAX(%f), MIN(%f), INST(%f)}",
+	r.Metric,
+	r.Range,
+	r.Pod,
+	r.Namespace,
+	r.LabelApp,
+	r.Node,
+	r.QueryTime,
+	r.Q95Value,
+	r.AvgValue,
+	r.MaxValue,
+	r.MinValue,
+	r.InstValue,
+	)
+}
+
+// ColumnsHeaders defines the expected headers` for the metrics table and exists
 // to provide a source of truth for our table format.
 func ColumnsHeaders() []string {
 	return []string{

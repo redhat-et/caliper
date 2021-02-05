@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/spf13/pflag"
@@ -64,11 +63,6 @@ func main() {
 	pflag.Parse()
 	defer klog.Flush()
 
-	if outFormat == "postgres" && version == "" {
-		klog.Info("version flag (-v | --ocp-version) required")
-		os.Exit(1)
-	}
-
 	klog.Infof("initializing openshift client from KUBECONFIG=%s", kubeconfig)
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	handleError(err)
@@ -103,19 +97,18 @@ func main() {
 	})
 	handleError(err)
 
-	switch outFormat {
-	case "postgres":
-		err = streamToDatabase(result)
-	case "csv":
-		fmt.Printf("%s\n", result.MarshalCSV())
-	default:
+	if toDb {
+		if err = streamToDatabase(result); err != nil {
+			handleError(err)
+		}
+	} else {
 		printToStdout(result)
 	}
 	handleError(err)
 }
 
 //Postgres compatible time format, required for converting query timestamps
-func streamToDatabase(metrics top.PodMetrics) error {
+func streamToDatabase(metrics top.PodMetricTable) error {
 	klog.Infoln("init postgres db client")
 	db, err := dbhandler.NewPostgresClient()
 	if err != nil {

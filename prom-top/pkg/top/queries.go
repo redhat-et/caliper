@@ -134,9 +134,9 @@ func (p PodMetric) String() string {
 	)
 }
 
-type PodMetrics []*PodMetric
+type PodMetricTable []*PodMetric
 
-func (pm PodMetrics) MarshalCSV() []byte {
+func (pm PodMetricTable) MarshalCSV() []byte {
 	buf := new(bytes.Buffer)
 	buf.Write([]byte("metric, range, pod, namespace, label-app, quantile-95, max, min, avg, inst\n"))
 	for _, line := range pm {
@@ -149,7 +149,7 @@ func (pm PodMetrics) MarshalCSV() []byte {
 // to generated the query string
 var targetMetrics = []string{cpuMetric, memoryMetric}
 
-func top(cfg Config) (PodMetrics, error) {
+func top(cfg Config) (PodMetricTable, error) {
 	now := time.Now() // get current time to maintain static end of range in queries
 
 	queryTemplates, err := selectQueryTemplates(cfg.QueryType)
@@ -242,7 +242,7 @@ func top(cfg Config) (PodMetrics, error) {
 			}
 		}
 	}
-	podMetrics := make(PodMetrics, 0, len(podMetricHashTable))
+	podMetrics := make(PodMetricTable, 0, len(podMetricHashTable))
 	for _, pm := range podMetricHashTable {
 		podMetrics = append(podMetrics, pm)
 	}
@@ -254,8 +254,8 @@ const defaultRange = "10m"
 
 // Top executes the specified query against targetMetrics and returns a slice of Prometheus InstantVertices.  An
 // instantVertex is a point-in-time data structure containing the metric values for all reporting components.  Thus,
-// Top is not intended for continuous monitoring. See TODO
-func Top(cfg Config) (PodMetrics, error) {
+// Top is not intended for continuous monitoring.
+func Top(cfg Config) (PodMetricTable, error) {
 	if cfg.Context == nil {
 		cfg.Context = context.Background()
 	}
