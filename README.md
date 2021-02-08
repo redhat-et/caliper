@@ -2,7 +2,7 @@
 
 ## Overview
 
-Caliper's objective is to provide a live, cross-version analysis of Openshift CPU, Memory, and Network usage.  Users (or automation) can execute a simple CLI tool to query, aggregate, and store metrics in a database.  A long lived service will read from the database and host a dashboard of plots comparing resource usage across versions.
+Caliper's objective is to provide a cross-version analysis of Openshift CPU, Memory, and Network usage.  Users (or automation) can execute a simple CLI tool to query, aggregate, and store metrics in a database.  A long lived service will read from the database and host a dashboard of plots comparing resource usage across versions.
 
 Unlike `kubectl top`, Caliper aggregates its results from Prometheus time-series, providing a more accurate picture of resource consumption.  Where `kubectl top` takes an instantaneous reading from [metrics-server](https://github.com/kubernetes-sigs/metrics-server), Caliper calculates 95th%, average, min, and max from a user-defined time range (default 10min). 
 
@@ -22,7 +22,7 @@ Build workflows are driven by `make`.  By default, it will build to container im
 
 - `make` / `make all` / `make build`: builds prom-top and plotter from source and produces container images for both.
 - `make prom-top`: compiles prom-top into a container image
-- `make plotter`: compiles prom-top into a container image
+- `make plotter`: create a plotter container image.  It `DOCKER != 0`, install python deps locally.
 - `make up`: uses docker-compose script to deploy a optionally build, then deploy a plotter and Postgres container.  If `DOCKER != 0`, then only starts the local plotter binary.  Use `ctrl-C` to stop the processes.
 - `make clean`: deletes build artifacts (container images or local binaries, depending you `DOCKER=0`)
 
@@ -46,3 +46,13 @@ To generate plots, Plotter and Postgres must be running.
 1. Execute prom-top with args: `./bin/prom-top -v $OPENSHIFT_CLUSTER_VERSION -o postgres`
 1. On the plotter browser page, hit refresh.  You should now see the aggregated metric data represented on the plots.
 
+## Expected Ouput
+
+Once deployed, Plotter will fetch all data from Postgres and generate comparative charts thanks to the Dash and Plottly python packages (see below).
+
+Groupings are configure in the [component-mappings.yaml](./plotter/component-mapping.yaml). Currently, the config is designed to compose groupings of namespaces.  This is likely to change with feedback but works as a PoC for the time being.
+
+
+
+
+![](/Users/jcope/Workspace/github.com/redhat-et/caliper/hack/charts.png)
