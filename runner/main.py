@@ -5,9 +5,12 @@ import progressbar
 import sys
 import shutil
 import subprocess
-from hashlib import sha256
+import yaml
+import semver
+import platform
 from urllib.parse import urlsplit
 from urllib.request import urlretrieve
+
 
 ## TODO ignition files add a hitch into scripting this.  We can't generate them via openshift-install as it requires
 ##  user input.  Pull secrets, platform config, ssh-keys stand out the most as being problematic.
@@ -16,58 +19,73 @@ from urllib.request import urlretrieve
 ##  Conclusion - automation and caliper are distinct from one-another.  Caliper as is can run against a standard OCP
 ##  cluster.  If this were to integrate into CI, it's a fair bet that cluster deployment already exists.
 
+default_workdir = os.path.join(os.path.realpath(os.path.join(os.path.dirname(__file__), os.pardir)), "_clusters")
+
 parser = argparse.ArgumentParser()
-parser.add_argument('-d', '--dir', type=str, dest='work_dir', help='optional prefix path for temp dir', required=True)
-parser.add_argument('-c', '--client', type=str, dest='client_loc', help='URL location of OCP client', required=True)
-parser.add_argument('-i', '--installer', type=str, dest='installer_loc', help='URL location of OCP installer', required=True)
-parser.add_argument("--ignition-config", type=str, dest='ignition_loc', help='path to a fully defined ignition config', required=True)
+parser.add_argument('-v', '--version', type=str, dest='version', default='latest', help='cluster version to deploy')
+parser.add_argument('-d', '--dir', type=str, dest='work_dir', default=default_workdir, help='optional prefix path for temp dir')
+parser.add_argument("--region", type=str, dest='region', default='us-east-2', help='AWS region')
+parser.add_argument("--install-config", type=str, dest='install_config_loc', help='path to a fully defined ignition config', required=True)
 args = parser.parse_args()
 
-ignition_file = args.ignition_loc
+version = args.version
 try:
-    os.stat(ignition_file)
+    if version != 'latest':
+        semver.VersionInfo.parse(version)
+except ValueError as e:
+    print(f"Expected semver format, got {version}")
+    quit(1)
+
+host_os = ''
+if platform.system() == 'Darwin':
+    host_os = 'mac'
+elif platform.system().lower() == 'Linux':
+    host_os = 'linux'
+else:
+    print("unsupported OS (sorry Windows)")
+    quit(0)
+
+installer_link = f'openshift-install-{host_os}'
+client_link = f'openshift-client-{host_os}'
+if version == 'latest':
+    installer_link = installer_link + '.tar.gz'
+    client_link = client_link + '.tar.gz'
+else:
+    installer_link = installer_link + f'-{version}.tar.tz'
+    client_link = client_link + f'-{version}.tar.tz'
+
+installer_link = f'https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{version}/{installer_link}'
+client_link = f'https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{version}/{client_link}'
+
+install_config = os.path.realpath(args.install_config_loc)
+try:
+    os.stat(install_config)
 except FileNotFoundError as e:
     print(e)
-    sys.exit(1)
+    quit(1)
 
-ocp_version = os.path.join(args.work_dir)
+work_dir = args.work_dir
 try:
-    os.stat(ocp_version)
+    os.stat(work_dir)
 except FileNotFoundError as e:
-    print(e)
-    sys.exit(1)
+    os.mkdir(work_dir)
 
-oc_tarball = os.path.basename(urlsplit(args.client_loc).path)
-inst_tarball = os.path.basename(urlsplit(args.installer_loc).path)
+print(
+    'Deployment Params:\n'
+    f'\tVersion: {version}\n'
+    f'\tClient: {client_link}\n'
+    f'\tInstaller: {installer_link}\n'
+    f'\tWorking Dir: {work_dir}\n'
+)
 
-# client's work_dir exists, but we want our own version-relative subdir, so we'll alter work_dir as such.
-# all FS ops should be constrained to here
-ocp_version = os.path.join(ocp_version, oc_tarball.rstrip('.tar.gz').lstrip('openshift-client-').lstrip('mac').lstrip('linux').lstrip('-'))
+work_dir = os.path.join(work_dir, version)
 print('setting up workspace')
-print(f'creating work dir: {ocp_version}')
 try:
-    os.mkdir(ocp_version)
+    print(f'creating work dir: {work_dir}')
+    os.mkdir(work_dir)
 except FileExistsError:
     # we'll be overwriting the tars and bins here anyway
-    print('nevermind, it already exists')
     pass
-
-
-# if there's a metadata.json file present, there's like a cluster that hasn't been torn down yet.  don't
-# orphan the cluster.
-installer_work_dir = os.path.join(ocp_version, 'deploy')
-print(f'creating installer sub-dir: {installer_work_dir}')
-try:
-    os.mkdir(installer_work_dir)
-except FileExistsError:
-    try:
-        meta_file = os.path.join(installer_work_dir, "metadata.json")
-        f = os.stat(meta_file)
-        print(f'found cluster metadata file {meta_file}, which could mean a cluster is still deployed.'
-              f'To avoid orphaning a cluster, first run openshift-install destroy cluster --dir={installer_work_dir}'
-              f'then rerun this program.')
-    except FileNotFoundError:
-        pass
 
 pbar = None
 
@@ -86,47 +104,90 @@ def show_progress(block_num, block_size, total_size):
         pbar = None
 
 
-oc_tarball = os.path.abspath(os.path.join(ocp_version, oc_tarball))
-print(f"Downloading file from {args.client_loc} => {oc_tarball}")
+tarball = os.path.join(work_dir, os.path.basename(client_link))
+print(f"Downloading file from {client_link} => {tarball}")
 try:
-    urlretrieve(url=args.client_loc, filename=oc_tarball, reporthook=show_progress)
+    urlretrieve(url=client_link, filename=tarball, reporthook=show_progress)
 except Exception as e:
     print(e)
-    sys.exit(1)
-
-inst_tarball = os.path.join(ocp_version, inst_tarball)
-print(f"Downloading file from {args.installer_loc} => {inst_tarball}")
-try:
-    urlretrieve(url=args.installer_loc, filename=inst_tarball, reporthook=show_progress)
-except Exception as e:
-    print(e)
-    sys.exit(1)
-
+    quit(1)
 print("un-tarring openshift client")
-with tarfile.open(oc_tarball) as tar:
-    tar.extract(member='oc', path=ocp_version)
-    oc = os.path.join(ocp_version, "oc")
-    tar.close()
-print("un-tarring openshift installer")
-with tarfile.open(inst_tarball) as tar:
-    tar.extract('openshift-install', path=ocp_version)
-    openshift_install = os.path.join(ocp_version, "openshift-install")
+with tarfile.open(tarball) as tar:
+    tar.extract(member='oc', path=work_dir)
+    oc = os.path.join(work_dir, "oc")
     tar.close()
 
-print(f"coping ignition config at {ignition_file} to {installer_work_dir}")
+
+tarball = os.path.join(work_dir, os.path.basename(installer_link))
+print(f"Downloading file from {installer_link} => {tarball}")
 try:
-    shutil.copy(ignition_file, installer_work_dir)
+    urlretrieve(url=installer_link, filename=tarball, reporthook=show_progress)
 except Exception as e:
     print(e)
+    quit(1)
+print("un-tarring openshift installer")
+with tarfile.open(tarball) as tar:
+    tar.extract('openshift-install', path=work_dir)
+    openshift_install = os.path.join(work_dir, "openshift-install")
+    tar.close()
 
-print("openshift client version:")
-subprocess.run([f"{oc}", "version"])
-print("openshift-install version:")
-subprocess.run([f"{openshift_install}", "version"])
+# if there's a metadata.json file present, there's like a cluster that hasn't been torn down yet.  don't
+# orphan the cluster.
+config_dir = os.path.join(work_dir, 'deploy')
+print(f'creating installer sub-dir: {config_dir}')
+try:
+    os.mkdir(config_dir)
+except FileExistsError:
+    try:
+        meta_file = os.path.join(config_dir, "metadata.json")
+        f = os.stat(meta_file)
+        print(f'found cluster metadata file {meta_file}, which could mean a cluster is still deployed.'
+              f'To avoid orphaning a cluster, first run openshift-install destroy cluster --dir={config_dir}'
+              f'then rerun this program.')
+    except FileNotFoundError:
+        pass
+
+print(f"coping ignition config at {install_config} to {config_dir}")
+try:
+    config_dest = os.path.join(config_dir, "install-config.yaml")
+    shutil.copy(install_config, config_dest)
+
+    with open(config_dest, mode='r') as file:
+        installer_data = yaml.load(file, Loader=yaml.FullLoader)
+        file.close()
+
+    installer_data["metadata"]["name"] = "caliper-ocp-" + version
+    installer_data["platform"]["aws"]["region"] = args.region
+    with open(config_dest, mode='w') as file:
+        yaml.dump(installer_data, file, yaml.Dumper)
+        file.close()
+except Exception as e:
+    print(e)
+    quit(1)
+
 
 print("starting cluster creation")
 try:
-    subprocess.run([f"{openshift_install}", "create", "cluster", "--dir", f"{installer_work_dir}"], check=True)
+    subprocess.run([f"{openshift_install}", "create", "cluster", "--dir", f"{config_dir}"], check=True)
 except subprocess.CalledProcessError as e:
     print(e)
     sys.exit(1)
+
+print("logging into cluster")
+kubeconfig = os.path.realpath(os.path.join(config_dir, "auth/kubeconfig"))
+os.putenv("KUBECONFIG", kubeconfig)
+
+password = ''
+try:
+    with open(os.path.realpath(os.path.join(config_dir, "auth/kubeadmin-password"))) as file:
+        password = file.read()
+        file.close()
+except FileNotFoundError as e:
+    print(f'could not find password file {os.path.realpath(os.path.join(config_dir, "auth/kubeadmin-password"))}')
+    quit(1)
+
+try:
+    subprocess.run([f'{oc}', 'login', '-u', 'kubeadmin', '-p', password], check=True)
+except subprocess.CalledProcessError as e:
+    print(e)
+    quit(1)
