@@ -82,7 +82,7 @@ func ColumnsHeaders() []string {
 const TimestampFormat = `2006-01-02 15:04:05`
 
 // Table is a hardcoded table name.  Will be replaced with dynamically set names.
-const Table = "metrics"
+const Table = "collated_metrics"
 
 const (
 	host     = "PGHOST"

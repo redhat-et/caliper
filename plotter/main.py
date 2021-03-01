@@ -266,7 +266,7 @@ radio_options = [
 app = dash.Dash(__name__)
 app.layout = html.Div(children=[
     html.H1(children='Caliper - Basic Dashboard'),
-    html.H2(children='Metrics taken over 1 hour span from Idle 6-Node (3 & 3) Clusters'),
+    html.H2(children='Net Resource Usage by an Idle 6 Node Cluster, Span 10min'),
     html.Div(children=[
         dcc.Graph(id='memory-graph'),
         dcc.RadioItems(id='memory-op-radio', value='q95_value', options=radio_options),

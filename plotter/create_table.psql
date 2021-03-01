@@ -1,0 +1,15 @@
+CREATE TABLE collated_metrics (
+    version TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    node  TEXT NOT NULL,
+    pod  TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    label_app TEXT,
+    avg_value DECIMAL,
+    q95_value DECIMAL,
+    max_value DECIMAL,
+    min_value DECIMAL,
+    inst_value DECIMAL,
+    query_time TIMESTAMP,
+    range  TEXT NOT NULL
+)

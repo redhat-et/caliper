@@ -115,7 +115,7 @@ func streamToDatabase(metrics top.PodMetricTable) error {
 		return fmt.Errorf("failed to send to db: %v", err)
 	}
 	sqIns := squirrel.
-		Insert("collated_metrics").
+		Insert(dbhandler.Table).
 		Columns(dbhandler.ColumnsHeaders()...).
 		PlaceholderFormat(squirrel.Dollar).
 		RunWith(db)
