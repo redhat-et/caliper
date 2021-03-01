@@ -8,7 +8,7 @@ import subprocess
 import yaml
 import semver
 import platform
-from urllib.parse import urlsplit
+from time import sleep
 from urllib.request import urlretrieve
 
 
@@ -64,11 +64,14 @@ except FileNotFoundError as e:
     print(e)
     quit(1)
 
-work_dir = args.work_dir
+work_dir = os.path.join(args.work_dir, version)
+print('setting up workspace')
 try:
-    os.stat(work_dir)
-except FileNotFoundError as e:
+    print(f'creating work dir: {work_dir}')
     os.mkdir(work_dir)
+except FileExistsError:
+    # we'll be overwriting the tars and bins here anyway
+    pass
 
 print(
     'Deployment Params:\n'
@@ -78,14 +81,6 @@ print(
     f'\tWorking Dir: {work_dir}\n'
 )
 
-work_dir = os.path.join(work_dir, version)
-print('setting up workspace')
-try:
-    print(f'creating work dir: {work_dir}')
-    os.mkdir(work_dir)
-except FileExistsError:
-    # we'll be overwriting the tars and bins here anyway
-    pass
 
 pbar = None
 
@@ -187,7 +182,17 @@ except FileNotFoundError as e:
     quit(1)
 
 try:
-    subprocess.run([f'{oc}', 'login', '-u', 'kubeadmin', '-p', password], check=True)
+    subprocess.run([oc, 'login', '-u', 'kubeadmin', '-p', password], check=True)
+    subprocess.run([oc, 'create', 'sa', 'caliper'], check=True)
+    subprocess.run([oc, 'adm', 'policy', 'add-cluster-role-to-user', 'cluster-admin', '-z', 'caliper'], check=True)
+    token = subprocess.run([oc, 'serviceaccounts', 'get-token', 'caliper'], text=True).stdout
+    with open(os.path.join(work_dir, token), mode='x'):
+        file.write(str(token))
+        file.close()
+    subprocess.run([''])
 except subprocess.CalledProcessError as e:
     print(e)
     quit(1)
+
+
+
