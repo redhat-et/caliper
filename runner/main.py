@@ -8,7 +8,7 @@ import subprocess
 import yaml
 import semver
 import platform
-from time import sleep
+from dotenv import load_dotenv
 from urllib.request import urlretrieve
 
 
@@ -23,17 +23,23 @@ default_workdir = os.path.join(os.path.realpath(os.path.join(os.path.dirname(__f
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-v', '--version', type=str, dest='version', default='latest', help='cluster version to deploy')
-parser.add_argument('-d', '--dir', type=str, dest='work_dir', default=default_workdir, help='optional prefix path for temp dir')
-parser.add_argument("--region", type=str, dest='region', default='us-east-2', help='AWS region')
-parser.add_argument("--install-config", type=str, dest='install_config_loc', help='path to a fully defined ignition config', required=True)
+parser.add_argument('-d', '--dir', type=str, dest='work_dir', default=default_workdir,
+                    help='optional prefix path for temp dir')
+parser.add_argument('--region', type=str, dest='region', default='us-east-2', help='AWS region')
+parser.add_argument('--install-config', type=str, dest='install_config_loc',
+                    help='path to a fully defined ignition config', required=True)
+parser.add_argument('--prom-top', type=str, dest='prom_top', help='path to the prom-top binary', default='prom-top')
+parser.add_argument('--prom-top-config', type=str, default='prom_top_config', help='path the .env file containing DB config')
 args = parser.parse_args()
+
+load_dotenv()
 
 version = args.version
 try:
     if version != 'latest':
         semver.VersionInfo.parse(version)
 except ValueError as e:
-    print(f"Expected semver format, got {version}")
+    print(f'Expected semver format, got {version}')
     quit(1)
 
 host_os = ''
@@ -42,7 +48,7 @@ if platform.system() == 'Darwin':
 elif platform.system().lower() == 'Linux':
     host_os = 'linux'
 else:
-    print("unsupported OS (sorry Windows)")
+    print('unsupported OS (sorry Windows)')
     quit(0)
 
 installer_link = f'openshift-install-{host_os}'
@@ -51,8 +57,8 @@ if version == 'latest':
     installer_link = installer_link + '.tar.gz'
     client_link = client_link + '.tar.gz'
 else:
-    installer_link = installer_link + f'-{version}.tar.tz'
-    client_link = client_link + f'-{version}.tar.tz'
+    installer_link = installer_link + f'-{version}.tar.gz'
+    client_link = client_link + f'-{version}.tar.gz'
 
 installer_link = f'https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{version}/{installer_link}'
 client_link = f'https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{version}/{client_link}'
@@ -62,6 +68,7 @@ try:
     os.stat(install_config)
 except FileNotFoundError as e:
     print(e)
+
     quit(1)
 
 work_dir = os.path.join(args.work_dir, version)
@@ -100,32 +107,32 @@ def show_progress(block_num, block_size, total_size):
 
 
 tarball = os.path.join(work_dir, os.path.basename(client_link))
-print(f"Downloading file from {client_link} => {tarball}")
+print(f'Downloading file from {client_link} => {tarball}')
 try:
     urlretrieve(url=client_link, filename=tarball, reporthook=show_progress)
 except Exception as e:
     print(e)
     quit(1)
-print("un-tarring openshift client")
+print('un-tarring openshift client')
 with tarfile.open(tarball) as tar:
     tar.extract(member='oc', path=work_dir)
-    oc = os.path.join(work_dir, "oc")
     tar.close()
+oc = os.path.join(work_dir, 'oc')
 
 
 tarball = os.path.join(work_dir, os.path.basename(installer_link))
-print(f"Downloading file from {installer_link} => {tarball}")
+print(f'Downloading file from {installer_link} => {tarball}')
 try:
     urlretrieve(url=installer_link, filename=tarball, reporthook=show_progress)
 except Exception as e:
     print(e)
     quit(1)
-print("un-tarring openshift installer")
+print('un-tarring openshift installer')
 with tarfile.open(tarball) as tar:
     tar.extract('openshift-install', path=work_dir)
-    openshift_install = os.path.join(work_dir, "openshift-install")
     tar.close()
-
+openshift_install = os.path.join(work_dir, 'openshift-install')
+#
 # if there's a metadata.json file present, there's like a cluster that hasn't been torn down yet.  don't
 # orphan the cluster.
 config_dir = os.path.join(work_dir, 'deploy')
@@ -134,7 +141,7 @@ try:
     os.mkdir(config_dir)
 except FileExistsError:
     try:
-        meta_file = os.path.join(config_dir, "metadata.json")
+        meta_file = os.path.join(config_dir, 'metadata.json')
         f = os.stat(meta_file)
         print(f'found cluster metadata file {meta_file}, which could mean a cluster is still deployed.'
               f'To avoid orphaning a cluster, first run openshift-install destroy cluster --dir={config_dir}'
@@ -142,17 +149,17 @@ except FileExistsError:
     except FileNotFoundError:
         pass
 
-print(f"coping ignition config at {install_config} to {config_dir}")
+print(f'coping ignition config at {install_config} to {config_dir}')
 try:
-    config_dest = os.path.join(config_dir, "install-config.yaml")
+    config_dest = os.path.join(config_dir, 'install-config.yaml')
     shutil.copy(install_config, config_dest)
 
     with open(config_dest, mode='r') as file:
         installer_data = yaml.load(file, Loader=yaml.FullLoader)
         file.close()
 
-    installer_data["metadata"]["name"] = "caliper-ocp-" + version
-    installer_data["platform"]["aws"]["region"] = args.region
+    installer_data['metadata']['name'] = 'caliper-ocp-' + version
+    installer_data['platform']["aws"]['region'] = args.region
     with open(config_dest, mode='w') as file:
         yaml.dump(installer_data, file, yaml.Dumper)
         file.close()
@@ -161,20 +168,20 @@ except Exception as e:
     quit(1)
 
 
-print("starting cluster creation")
+print('starting cluster creation')
 try:
-    subprocess.run([f"{openshift_install}", "create", "cluster", "--dir", f"{config_dir}"], check=True)
+    subprocess.run([f'{openshift_install}', 'create', 'cluster', '--dir', f'{config_dir}'], check=True)
 except subprocess.CalledProcessError as e:
     print(e)
     sys.exit(1)
 
-print("logging into cluster")
-kubeconfig = os.path.realpath(os.path.join(config_dir, "auth/kubeconfig"))
-os.putenv("KUBECONFIG", kubeconfig)
+print('logging into cluster')
+kubeconfig = os.path.realpath(os.path.join(config_dir, 'auth/kubeconfig'))
+os.putenv('KUBECONFIG', kubeconfig)
 
 password = ''
 try:
-    with open(os.path.realpath(os.path.join(config_dir, "auth/kubeadmin-password"))) as file:
+    with open(os.path.realpath(os.path.join(config_dir, 'auth/kubeadmin-password'))) as file:
         password = file.read()
         file.close()
 except FileNotFoundError as e:
@@ -183,16 +190,7 @@ except FileNotFoundError as e:
 
 try:
     subprocess.run([oc, 'login', '-u', 'kubeadmin', '-p', password], check=True)
-    subprocess.run([oc, 'create', 'sa', 'caliper'], check=True)
-    subprocess.run([oc, 'adm', 'policy', 'add-cluster-role-to-user', 'cluster-admin', '-z', 'caliper'], check=True)
-    token = subprocess.run([oc, 'serviceaccounts', 'get-token', 'caliper'], text=True).stdout
-    with open(os.path.join(work_dir, token), mode='x'):
-        file.write(str(token))
-        file.close()
-    subprocess.run([''])
+    measurements = subprocess.run([args.prom_top, '--range', '30m', '-v', version, '--postgres'], text=True)
 except subprocess.CalledProcessError as e:
     print(e)
     quit(1)
-
-
-
