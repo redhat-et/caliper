@@ -21,8 +21,8 @@ OUTDIR := $(ROOTDIR)/bin
 GOOS = linux
 GOARCH = amd64
 
-PROMTOP_TAG=prom-top:latest
-PLOTTER_TAG=plotter:latest
+PROMTOP_TAG=quay.io/jcope/prom-top:latest
+PLOTTER_TAG=quay.io/jcope/plotter:latest
 TMP_DIR=./_build_promtop/
 
 # By default, run build containers.
