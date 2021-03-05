@@ -125,29 +125,29 @@ def color_map(df=pd.DataFrame()):
     return cm
 
 
-def generate_mem_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
+def bar_fig(df=pd.DataFrame(), op='', y_max=0.0, title='', y_title='', x_title='', suffix='', legend_title=''):
     fig = px.bar(
         data_frame=df,
         x='version',
         y=['group', op],
         color='group',
-        title='Cluster Memory Usage by OCP Version',
+        title=title,
         color_discrete_map=color_map(df),
     )
     fig.update_yaxes(
         go.layout.YAxis(
-            title='Net Memory Usage by Groups In Gigabytes',
-            ticksuffix='Gb',
+            title=y_title,
+            ticksuffix=suffix,
             range=[0, y_max],
             fixedrange=True,
         ))
     fig.update_xaxes(go.layout.XAxis(
-        title='OCP Versions',
+        title=x_title,
     ))
     fig.update_layout(
         go.Layout(
             legend=go.layout.Legend(
-                title='OCP Component Groups',
+                title=legend_title,
                 traceorder='reversed',
             ),
         )
@@ -155,87 +155,22 @@ def generate_mem_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
     return fig
 
 
-def generate_cpu_bar_fig(df=pd.DataFrame(), op='q95_value', y_max=0.0):
-    fig = px.bar(
-        data_frame=df,
-        x='version',
-        y=op,
-        color='group',
-        title='Cluster CPU Time by OCP Version',
-        color_discrete_map=color_map(df),
-    )
-    fig.update_yaxes(go.layout.YAxis(
-        ticksuffix='hs',
-        title='Net CPU Time in Hours',
-        range=[0, y_max],
-        fixedrange=True,
-    ))
-    fig.update_xaxes({
-        'title': 'OCP Versions'
-    })
-    fig.update_layout(
-        go.Layout(
-            legend=go.layout.Legend(
-                title='OCP Component Groups',
-                traceorder='reversed',
-            )
-        )
-    )
-    return fig
-
-
-def generate_mem_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
+def line_fig(df=pd.DataFrame(), op='', y_max=0.0, title='', y_title='', x_title='', tick_suffix=''):
     fig = go.Figure()
     fig.update_layout({
-        "title": 'Memory Usage Trends by OCP Version',
+        "title": title,
         "legend": {
             "traceorder": 'grouped+reversed',
         },
     })
     fig.update_yaxes({
-        "title": 'Net Memory Consumed in Gigabytes',
-        "ticksuffix": 'Gb',
+        "title": y_title,
+        "ticksuffix": tick_suffix,
         "fixedrange": True,
         "range": [0, y_max]
     })
     fig.update_xaxes({
-        "title": 'OCP Version'
-    })
-
-    groups = df.groupby(by='group', sort=True)
-    for n, g in groups:
-        g.sort_values(by=op, ascending=False)
-    cm = color_map(df)
-    for name, g in groups:
-        fig.add_trace(
-            go.Scatter(
-                name=name,
-                x=g['version'],
-                y=g[op],
-                legendgroup=1,
-                marker={'color': cm[name]},
-            )
-        )
-
-    return fig
-
-
-def generate_cpu_line(df=pd.DataFrame(), op='q95_value', y_max=0.0):
-    fig = go.Figure()
-    fig.update_layout({
-        "title": 'CPU Time Trends by OCP Version',
-        "legend": {
-            "traceorder": 'grouped+reversed',
-        }
-    })
-    fig.update_yaxes({
-        "title": 'Net CPU Time in Hours',
-        "ticksuffix": 'hs',
-        "fixedrange": True,
-        "range": [0, y_max]
-    })
-    fig.update_xaxes({
-        "title": 'OCP Version'
+        "title": x_title
     })
 
     groups = df.groupby(by='group', sort=True)
@@ -295,7 +230,7 @@ def mem_response(op):
     df_mem = get_mem_metrics()
     y_max = pad_range(get_max_bar_height(df_mem))
     df_mem = trim_and_group(df_mem, op=op)
-    return generate_mem_bar_fig(df_mem, op=op, y_max=y_max)
+    return bar_fig(df=df_mem, op=op, y_max=y_max, title='Total memory consumed', suffix='Gb', y_title='Memory (Gb)', x_title='OCP Version')
 
 
 @app.callback(
@@ -306,7 +241,7 @@ def cpu_response(op):
     df_cpu = get_cpu_metrics()
     y_max = pad_range(get_max_bar_height(df_cpu))
     df_cpu = trim_and_group(df_cpu, op)
-    return generate_cpu_bar_fig(df_cpu, op, y_max)
+    return bar_fig(df_cpu, op, y_max, title='Cluster CPU Time by OCP Version', suffix='Hrs', y_title='Net CPU Time in Hours', x_title='OCP Versions', legend_title='')
 
 
 @app.callback(
@@ -317,7 +252,7 @@ def mem_line_response(op):
     df_mem = get_mem_metrics()
     df_mem = trim_and_group(df_mem, op)
     y_max = pad_range(df_mem['max_value'].max())
-    return generate_mem_line(df_mem, op, y_max)
+    return line_fig(df=df_mem, op=op, y_max=y_max, tick_suffix='Gb', title='Memory Usage Trends by OCP Version', y_title='Net Memory Consumed in Gigabytes', x_title='OCP Version')
 
 
 @app.callback(
@@ -328,7 +263,7 @@ def mem_line_response(op):
     df_mem = get_cpu_metrics()
     df_mem = trim_and_group(df_mem, op)
     y_max = pad_range(df_mem['max_value'].max())
-    return generate_cpu_line(df_mem, op, y_max)
+    return line_fig(df=df_mem, op=op, y_max=y_max, tick_suffix='Hrs', title='CPU Time Trends by OCP Version', y_title='Net CPU Time in Hours', x_title='OCP Version')
 
 
 if __name__ == '__main__':
