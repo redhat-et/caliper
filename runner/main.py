@@ -4,7 +4,7 @@ import shutil
 import tarfile
 import time
 from os import path
-from subprocess import run, PIPE
+from subprocess import run
 from urllib.error import ContentTooShortError
 from urllib.request import urlretrieve
 
@@ -32,13 +32,13 @@ def parse_args_install_config(args=argparse.Namespace()):
 
 def prom_top_command(kubeconfig='', version=''):
     cmd = []
-    args = [f'--postgres --ocp-version {str(version)} --range {str(s.MAX_WAIT_SECONDS)}s']
+    args = [f'--postgres', '--ocp-version', f'{str(version)}', '--range', f'{str(s.MAX_WAIT_SECONDS)}s']
     if s.PROM_TOP_SOURCE == 1:
-        cmd = [f'docker run --network build_postgres --rm -v {kubeconfig}:/root/.kube/config --env-file {s.DOTENV} quay.io/jcope/prom-top:latest'] + args
+        cmd = [f'docker', 'run', '--network', 'build_postgres', '--rm', '-v', f'{kubeconfig}:/root/.kube/config',
+               '--env-file', f'{s.DOTENV}', '-e', 'PGHOST=postgres', 'quay.io/jcope/prom-top:latest']
     elif s.PROM_TOP_SOURCE == 2:
-        cmd = ['prom-top'] + args
-    print(' '.join(cmd))
-    return cmd
+        cmd = ['prom-top']
+    return cmd + args
 
 
 def parse_args_version(args=argparse.Namespace()):
@@ -102,13 +102,16 @@ def mk_deploy_dir(parent):
     d = os.path.join(parent, 'deploy')
     try:
         os.mkdir(d)
-    except FileExistsError:
-        print()
-        # if live_cluster(d):
-    #         print(f'found cluster {d}/metadata.j file, which could mean a cluster is still deployed.'
-    #               f'To avoid orphaning a cluster, first run openshift-install destroy cluster --dir={d}'
-    #               f'then rerun this program.')
-    #         quit(1)
+    except FileExistsError as e:
+        pass
+        if live_cluster(d):
+            pass
+            raise FileExistsError(f'{e}\n',
+                                  f'found cluster {d}/metadata.json file, which could mean a cluster is still deployed.\n'
+                                  f'To avoid orphaning a cluster, first run openshift-install destroy cluster --dir={d}\n'
+                                  f'then rerun this program.\n')
+        else:
+            pass
     return d
 
 
@@ -131,6 +134,14 @@ def show_progress(block_num, block_size, total_size):
 
 def fetch_binary(src, dst, name):
     tarball = os.path.join(dst, os.path.basename(src))
+    target = os.path.join(dst, f'{name}')
+    try:
+        os.stat(target)  # short circuit to avoid redownloading tarballs
+    except FileNotFoundError:
+        pass
+    else:
+        return target
+
     try:
         urlretrieve(url=src, filename=tarball, reporthook=show_progress)
     except ContentTooShortError as e:
@@ -139,7 +150,7 @@ def fetch_binary(src, dst, name):
     with tarfile.open(tarball) as tar:
         tar.extract(member=name, path=dst)
         tar.close()
-    return os.path.join(dst, f'{name}')
+    return target
 
 
 def fetch_oc_bin(src, dst):
@@ -181,18 +192,14 @@ def prepare_install_config(src, dst, version, region):
 
 def get_cluster_passwd(deploy_dir):
     pw_file = os.path.realpath(os.path.join(deploy_dir, 'auth/kubeadmin-password'))
+    print(f"getting password file: {pw_file}")
     try:
         with open(pw_file) as file:
             password = file.read()
+            file.close()
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"password file {pw_file} not found")
-    finally:
-        file.close()
+        raise FileNotFoundError(f"password file {pw_file} not found: {e}")
     return password
-
-
-def kubeconfig_path(deploy_dir):
-    return os.path.realpath(os.path.join(deploy_dir, 'auth/kubeconfig'))
 
 
 oc = ''
@@ -217,17 +224,11 @@ def main():
     )
     time.sleep(3)
 
-    deploy_dir = mk_deploy_dir(work_dir)
+    try:
+        deploy_dir = mk_deploy_dir(work_dir)
+    except FileExistsError as e:
+        raise e
     prepare_install_config(src=install_config, dst=deploy_dir, version=version, region=region)
-
-    kubeconfig = kubeconfig_path(deploy_dir)
-    os.putenv('KUBECONFIG', kubeconfig)
-
-    prom_top = prom_top_command(kubeconfig, version)
-    if prom_top == '':
-        print('prom-top image or binary not found')
-        quit(1)
-    output = run(prom_top, capture_output=False, text=True, shell=True)
 
     global oc
     try:
@@ -237,10 +238,13 @@ def main():
         print(e)
         quit(1)
 
-    # print('starting cluster creation')
-    # output = run([openshift_install, 'create', 'cluster', '--dir', f'{deploy_dir}'], check=False, text=True)
-    # if output.returncode > 0:
-    #     print(f'error creating cluster:\ncmd: {output.args}\nerr:{output.stderr}')
+    print('starting cluster creation')
+    output = run([openshift_install, 'create', 'cluster', '--dir', f'{deploy_dir}'], check=False, text=True)
+    if output.returncode > 0:
+        print(f'error creating cluster:\ncmd: {output.args}\nerr:{output.stderr}')
+        quit(1)
+
+    time.sleep(s.MAX_WAIT_SECONDS)
 
     password = ''
     try:
@@ -249,18 +253,23 @@ def main():
         print(f"failed to get cluster password: {e}")
         quit(1)
 
-    output = run([oc, 'login', '-u', 'kubeadmin', '-p', password], check=False, text=True)
+    kubeconfig = path.join(deploy_dir, 'auth/kubeconfig')
+    os.putenv('KUBECONFIG', kubeconfig)
+    output = run([oc, 'login', '-u', 'kubeadmin', '-p', password, '--kubeconfig', kubeconfig], check=False, text=True)
     if output.returncode > 0:
         print(f'failed to login to cluster')
         quit(0)
 
-    # time.sleep(s.MAX_WAIT_SECONDS)
-
-    output = run([prom_top, '--range', f'{s.MAX_WAIT_SECONDS}s', '-v', version, '--postgres'], text=True, stderr=PIPE)
+    prom_top = prom_top_command(kubeconfig, version)
+    if len(prom_top) == 0:
+        print('prom-top image or binary not found')
+        quit(1)
+    output = run(prom_top, text=True, check=False)
     if output.returncode > 0:
-        print(f'prom-top failed: {output.stderr}')
+        print('prom-top failed')
+        quit(1)
 
-    output = run([openshift_install, 'destroy', 'cluster', '--dir', deploy_dir], check=False, text=True, stderr=PIPE)
+    output = run([openshift_install, 'destroy', 'cluster', '--dir', deploy_dir], check=False, text=True)
     if output.returncode > 0:
         print(f'cluster teardown failed: {output.stderr}')
         quit(1)
