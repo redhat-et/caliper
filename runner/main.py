@@ -244,8 +244,9 @@ def main():
         print(f'error creating cluster:\ncmd: {output.args}\nerr:{output.stderr}')
         quit(1)
 
+    print(f'Waiting {s.MAX_WAIT_SECONDS / 60}min to generate enough data')
     time.sleep(s.MAX_WAIT_SECONDS)
-
+    print('Wait expired, gathering data')
     password = ''
     try:
         password = get_cluster_passwd(deploy_dir)
@@ -255,10 +256,16 @@ def main():
 
     kubeconfig = path.join(deploy_dir, 'auth/kubeconfig')
     os.putenv('KUBECONFIG', kubeconfig)
-    output = run([oc, 'login', '-u', 'kubeadmin', '-p', password, '--kubeconfig', kubeconfig], check=False, text=True)
-    if output.returncode > 0:
-        print(f'failed to login to cluster')
-        quit(0)
+
+    login_retries = 10
+    for i in range(0, login_retries):
+        output = run([oc, '--kubeconfig', kubeconfig, 'login', '-u', 'kubeadmin', '-p', password], check=False, text=True)
+        if output.returncode == 0:
+            break
+        elif output.returncode > 0 and i == login_retries - 1:
+            print(f"failed to login to cluster after {login_retries}")
+            quit(1)
+        print('failed to login to cluster, retrying')
 
     prom_top = prom_top_command(kubeconfig, version)
     if len(prom_top) == 0:
