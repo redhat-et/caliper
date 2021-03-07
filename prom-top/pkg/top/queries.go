@@ -88,32 +88,20 @@ const (
 //     T_QUANTILE
 //     T_AVERAGE
 const (
-	quantileOverTimeTemplate = `quantile_over_time(.95, {{.Metric}}[{{.Range}}])`
-	avgOverTimeTemplate      = `avg_over_time({{.Metric}}[{{.Range}}])`
-	maxOverTimeTemplate      = `max_over_time({{.Metric}}[{{.Range}}])`
-	minOverTimeTemplate      = `min_over_time({{.Metric}}[{{.Range}}])`
-	instantTemplate          = `{{.Metric}}`
+	avgCpu  = `avg(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
+	maxCpu  = `max(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
+	minCpu  = `min(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
+	q95Cpu  = `quantile(.95, rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
+	instCpu = `sum(container_cpu_usage_seconds_total{pod!=''}) by (pod, namespace, node)`
 
-	// appLabelQuery wraps query templates after they've been processed in order to
-	// add the 'label_app' label to the metric.  This groups pods by their deployment
-	appLabelQuery = `sum by (pod, label_app) (kube_pod_labels{pod!=""}) * on (pod) group_right(label_app) sum by (pod, namespace, node) ({{.Query}})`
+	avgMem  = `avg(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node)`
+	maxMem  = `max(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node)`
+	minMem  = `min(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node)`
+	q95Mem  = `quantile(.95, container_memory_usage_bytes) by (pod, namespace, node)`
+	instMem = `container_memory_usage_bytes{pod!=''}`
 )
 
-func selectQueryTemplates(q string) ([]string, error) {
-	t := make([]string, 0)
-	switch q {
-	case "q":
-		t = append(t, quantileOverTimeTemplate)
-	case "a":
-		t = append(t, avgOverTimeTemplate)
-	case "i":
-		t = append(t, instantTemplate)
-	default:
-		// instant is excluded as its generally an uninteresting data point in this context
-		t = []string{quantileOverTimeTemplate, avgOverTimeTemplate, maxOverTimeTemplate, minOverTimeTemplate}
-	}
-	return t, nil
-}
+var metrics = []string{avgCpu, maxCpu, minCpu, q95Cpu, instCpu, avgMem, maxMem, minMem, q95Mem, instMem}
 
 type PodMetric dbhandler.Row
 
@@ -129,8 +117,8 @@ func floatToString(f float64) string {
 }
 
 func (p PodMetric) String() string {
-	return fmt.Sprintf("metric => %q {Pod=%s, Namespace=%s, Label App=%s}: {Avg: %f, Q95: %f, Max: %f, Min: %f}",
-		p.Metric, p.Pod, p.Namespace, p.LabelApp, p.AvgValue, p.Q95Value, p.MaxValue, p.MinValue,
+	return fmt.Sprintf("metric => %q {Pod=%s, Namespace=%s, Node=%s, Label App=%s}: {Avg: %f, Q95: %f, Max: %f, Min: %f}",
+		p.Metric, p.Pod, p.Namespace, p.Node, p.LabelApp, p.AvgValue, p.Q95Value, p.MaxValue, p.MinValue,
 	)
 }
 
@@ -147,99 +135,85 @@ func (pm PodMetricTable) MarshalCSV() []byte {
 
 // targetMetrics specify the metric to be queried.  These values are processed by generateQueryList()
 // to generated the query string
-var targetMetrics = []string{cpuMetric, memoryMetric}
+//var targetMetrics = []string{cpuMetric, memoryMetric}
 
 func top(cfg Config) (PodMetricTable, error) {
 	now := time.Now() // get current time to maintain static end of range in queries
-
-	queryTemplates, err := selectQueryTemplates(cfg.QueryType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse query type: %v", err)
-	}
-
-	// sequentially form and execute the queries from queryTemplates and store the resultant vectors in memory
-	appLabelsTmp := template.New("labels")
-	template.Must(appLabelsTmp.Parse(appLabelQuery))
 
 	//podMetricHashTable is used to collate metric values by pod.  Each query must be executed independently, resulting
 	// in up to 4 values per pod.  Pods are hashed to the table to enable simple lookup and updating
 	podMetricHashTable := make(map[uint32]*PodMetric)
 	hash := fnv.New32a()
-	for _, tm := range targetMetrics {
-		for _, qt := range queryTemplates {
-			tmp := template.New("")
-			template.Must(tmp.Parse(qt))
-			// constructs the query
-			queryBuf := new(bytes.Buffer)
-			err = tmp.Execute(queryBuf, struct {
-				Metric, Range string
-			}{tm, cfg.Range})
-			if err != nil {
-				return nil, fmt.Errorf("composing base query template: %v", err)
-			}
+	for _, m := range metrics {
+		tmp := template.New("")
+		template.Must(tmp.Parse(m))
+		//// constructs the query
+		queryBuf := new(bytes.Buffer)
+		err := tmp.Execute(queryBuf, struct {
+			Metric, Range string
+		}{m, cfg.Range})
+		if err != nil {
+			return nil, fmt.Errorf("composing base query template: %v", err)
+		}
 
-			// wraps the query with the appLabelQuery to inject the label_app into the metric's label vector
-			labelBuf := new(bytes.Buffer)
-			err = appLabelsTmp.Execute(labelBuf, struct {
-				Query string
-			}{queryBuf.String()})
-			if err != nil {
-				return nil, fmt.Errorf("composing label query template: %v", err)
-			}
+		// execute the query
+		queryValue, _, err := cfg.PrometheusClient.Query(cfg.Context, queryBuf.String(), now)
+		if err != nil {
+			return nil, fmt.Errorf("query %q failed: %v", queryBuf.String(), err)
+		}
+		vector, ok := queryValue.(model.Vector)
+		if !ok {
+			return nil, fmt.Errorf("expected vector")
+		}
 
-			// execute the query
-			queryValue, _, err := cfg.PrometheusClient.Query(cfg.Context, labelBuf.String(), now)
-			if err != nil {
-				return nil, fmt.Errorf("query %q failed: %v", labelBuf.String(), err)
+		for _, sample := range vector {
+			ns, _ := sample.Metric["namespace"]
+			pod, _ := sample.Metric["pod"]
+			node, _ := sample.Metric["node"]
+
+			// The hash is derived from the namespace, pod name, and node
+			var metric string
+			if strings.Contains(m, "mem") {
+				metric = "container_memory_bytes"
+			} else if strings.Contains(m, "cpu") {
+				metric = "cpu_usage_ratio"
 			}
-			vector, ok := queryValue.(model.Vector)
+			_, err := hash.Write([]byte(fmt.Sprintf("%s-%s-%s", string(ns), string(pod), metric)))
+			id := hash.Sum32()
+			hash.Reset()
+
+			if err != nil {
+				return nil, err
+			}
+			_, ok := podMetricHashTable[id]
 			if !ok {
-				return nil, fmt.Errorf("expected vector")
-			}
-			if !ok {
-				return nil, fmt.Errorf("template unknown in lookup: %s", qt)
+				podMetricHashTable[id] = new(PodMetric)
 			}
 
-			for _, sample := range vector {
-				ns, _ := sample.Metric["namespace"]
-				pod, _ := sample.Metric["pod"]
+			labelApp, _ := sample.Metric["label_app"]
+			podMetricHashTable[id].Namespace = string(ns)
+			podMetricHashTable[id].Pod = string(pod)
+			podMetricHashTable[id].Node = string(node)
+			podMetricHashTable[id].Metric = metric
+			podMetricHashTable[id].LabelApp = string(labelApp)
+			podMetricHashTable[id].Range = cfg.Range
+			podMetricHashTable[id].QueryTime = now.Format(dbhandler.TimestampFormat)
 
-				// The hash is derived from the namespace, pod name, and target metric
-				_, err := hash.Write([]byte(fmt.Sprintf("%s-%s-%s", string(ns), string(pod), tm)))
-				id := hash.Sum32()
-				hash.Reset()
-
-				if err != nil {
-					return nil, err
-				}
-				_, ok := podMetricHashTable[id]
-				if !ok {
-					podMetricHashTable[id] = new(PodMetric)
-				}
-
-				labelApp, _ := sample.Metric["label_app"]
-				podMetricHashTable[id].Namespace = string(ns)
-				podMetricHashTable[id].Pod = string(pod)
-				podMetricHashTable[id].Metric = tm
-				podMetricHashTable[id].LabelApp = string(labelApp)
-				podMetricHashTable[id].Range = cfg.Range
-				podMetricHashTable[id].QueryTime = now.Format(dbhandler.TimestampFormat)
-
-				switch {
-				case strings.Contains(qt, "quantile_over_time"):
-					podMetricHashTable[id].Q95Value = float64(sample.Value)
-				case strings.Contains(qt, "avg_over_time"):
-					podMetricHashTable[id].AvgValue = float64(sample.Value)
-				case strings.Contains(qt, "max_over_time"):
-					podMetricHashTable[id].MaxValue = float64(sample.Value)
-				case strings.Contains(qt, "min_over_time"):
-					podMetricHashTable[id].MinValue = float64(sample.Value)
-				case len(qt) > 0:
-					// instant metrics will not have the above aggregation queries, making it difficult to detect.
-					// assume it's an instant query if the string is non-0 len and doesn't contain an aggregation query
-					podMetricHashTable[id].MinValue = float64(sample.Value)
-				}
+			switch {
+			case strings.Contains(m, "quantile"):
+				podMetricHashTable[id].Q95Value = float64(sample.Value)
+			case strings.Contains(m, "avg"):
+				podMetricHashTable[id].AvgValue = float64(sample.Value)
+			case strings.Contains(m, "max"):
+				podMetricHashTable[id].MaxValue = float64(sample.Value)
+			case strings.Contains(m, "min"):
+				podMetricHashTable[id].MinValue = float64(sample.Value)
+			case len(m) > 0:
+				// instant metrics will not have the above aggregation queries, making it difficult to detect.
+				// assume it's an instant query if the string is non-0 len and doesn't contain an aggregation query
+				podMetricHashTable[id].InstValue = float64(sample.Value)
 			}
+			//}
 		}
 	}
 	podMetrics := make(PodMetricTable, 0, len(podMetricHashTable))
