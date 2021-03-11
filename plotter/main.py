@@ -1,11 +1,12 @@
 import os
-import semver
+
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
 import numpy
 import pandas as pd
 import psycopg2
+import semver
 import yaml
 from dash.dependencies import Input, Output
 from dotenv import load_dotenv
@@ -46,24 +47,24 @@ def db_numeric_to_float(df):
     return df
 
 
-def version_order():
-    order_versions = []
+def order_versions():
+    versions = []
     try:
         v = semver.VersionInfo.parse('4.6.0')
-        order_versions.append(str(v))
+        versions.append(str(v))
         # inc minor ver
         for i in range(1):
             # inc patch ver
             for k in range(20):
                 v = v.bump_patch()
-                order_versions.append(str(v))
+                versions.append(str(v))
             v = v.replace(patch=0)
             v = v.bump_minor()
-            order_versions.append(str(v))
+            versions.append(str(v))
     except Exception as e:
         print(f"exception: {e}")
         pass
-    return order_versions
+    return versions
 
 
 def df_mem_bytes_to_gigabytes(df):
@@ -72,15 +73,12 @@ def df_mem_bytes_to_gigabytes(df):
     return df
 
 
-def df_seconds_to_hours(df):
-    for v in value_columns:
-        df[v] = df[v] / (60 * 60)
-    return df
-
-
 def assign_groupings(df=pd.DataFrame()):
     groups = numpy.empty(len(df), dtype=object)
-    df.insert(len(df.columns), 'group', groups)
+    try:
+        df.insert(len(df.columns), 'group', groups)
+    except KeyError as e:
+        print(f"dataframe exception: {e}")
     for grp, namespaces in group_config.items():
         for ns in namespaces:
             df.loc[df['namespace'] == ns, ['group']] = grp
@@ -108,7 +106,7 @@ def sort_by_version(df=pd.DataFrame()) -> pd.DataFrame:
 
 def get_mem_metrics():
     query_mem = """
-    SELECT * FROM collated_metrics WHERE metric = 'container_memory_bytes';
+    SELECT * FROM caliper_metrics WHERE metric = 'container_memory_bytes';
     """
     df = executeQuery(query_mem)
     df = df_mem_bytes_to_gigabytes(df)
@@ -117,10 +115,11 @@ def get_mem_metrics():
 
 def get_cpu_metrics():
     query_cpu = """
-    SELECT * FROM collated_metrics WHERE metric = 'cpu_usage_ratio';
+    SELECT * FROM caliper_metrics WHERE metric = 'cpu_usage_ratio';
     """
     df = executeQuery(query_cpu)
-    df = df_seconds_to_hours(df)
+    for v in value_columns:
+        df[v] = df[v] * 100
     return df
 
 
@@ -142,10 +141,13 @@ def pad_range(r=0):
     return r * 1.1
 
 
-def color_map(df=pd.DataFrame()):
+def color_map(df=pd.DataFrame(), by='') -> dict:
     cm = {}
     colors = px.colors.qualitative.G10
-    grp = df.groupby(by='group', as_index=True, sort=True)
+    try:
+        grp = df.groupby(by=by, as_index=True, sort=True)
+    except Exception as e:
+        raise KeyError(f'color_map.dataframe.groupby: {type(e)}: input value {e} raised exception')
     i = 0
     for g in grp.groups:
         cm[g] = colors[i]
@@ -153,10 +155,10 @@ def color_map(df=pd.DataFrame()):
     return cm
 
 
-def pod_max(df=pd.DataFrame(), op='') -> pd.DataFrame():
-    grp = df.groupby(by=['version', 'node'], sort=True, as_index=True).max(numeric_only=True)
-    # print(grp)
-    return
+def pod_max(df=pd.DataFrame(), op='', by='') -> pd.DataFrame():
+    return df.groupby(by=['version', by, op], sort=True, as_index=True).max(numeric_only=True).reset_index()
+
+
 
 def pod_min(df=pd.DataFrame()) -> pd.DataFrame(): return
 
@@ -165,6 +167,14 @@ def pod_avg(df=pd.DataFrame()) -> pd.DataFrame(): return
 
 
 def pod_q95(df=pd.DataFrame()) -> pd.DataFrame(): return
+
+
+op_map = {
+    'max': pod_max,
+    'min': pod_min,
+    'avg': pod_avg,
+    'q95': pod_q95,
+}
 
 
 def operators(df=pd.DataFrame()) -> pd.DataFrame(): return
@@ -180,7 +190,7 @@ def bar_fig(df=pd.DataFrame(), op='', y_max=0.0, title='', y_title='', x_title='
         y=['group', op],
         color='group',
         title=title,
-        color_discrete_map=color_map(df),
+        color_discrete_map=color_map(df, by='group'),
     )
     fig.update_yaxes(
         go.layout.YAxis(
@@ -220,28 +230,33 @@ def line_fig(df=pd.DataFrame(), op='', y_max=0.0, title='', y_title='', x_title=
     fig.update_xaxes({
         "title": x_title
     })
-
-    groups = df.groupby(by='group', sort=True)
-    cm = color_map(df)
-    for name, g in groups:
-        g['version'] = g['version'].map(semver.parse_version_info)
-        g.sort_values(by='version', inplace=True)
-        g['version'] = g['version'].astype(str)
-        fig.add_trace(
-            go.Scatter(
-                name=name,
-                x=g['version'],
-                y=g[op],
-                legendgroup=1,
-                marker={'color': cm[name]},
+    try:
+        cm = color_map(df, by='group')
+        groups = df.groupby(by='group', sort=True)
+        for name, g in groups:
+            g['version'] = g['version'].map(semver.parse_version_info)
+            g.sort_values(by='version', inplace=True)
+            g['version'] = g['version'].astype(str)
+            fig.add_trace(
+                go.Scatter(
+                    name=name,
+                    x=g['version'],
+                    y=g[op],
+                    legendgroup=1,
+                    marker={'color': cm[name]},
+                )
             )
-        )
+    except Exception as e:
+        raise Exception(f'line_fig: {e}')
 
     return fig
 
 
-def bar_group_fig(df=pd.DataFrame(), op='', y_max=0.0, group='', title='', y_title='', x_title='', tick_suffix=''):
-    return go.Figure()
+def bar_group_fig(df=pd.DataFrame(), op='', y_max=0.0, title='', y_title='', x_title='', tick_suffix=''):
+    df = df[['version', 'group', 'namespace', 'pod', op]]
+    df = df.groupby(by=['version', 'group']).max().reset_index()
+
+    y_max = pad_range(df[op].max())
 
     fig = go.Figure()
     fig.update_layout({
@@ -259,18 +274,21 @@ def bar_group_fig(df=pd.DataFrame(), op='', y_max=0.0, group='', title='', y_tit
     fig.update_xaxes({
         'title': x_title
     })
-
-    groups = df.groupby(by=group, sort=True)
-    for n, g in groups:
-        g.sort_values(by=op, ascending=False)
-    for n, g in groups:
-        fig.add_trace(
-            go.Bar(
-                name=n,
-                x=g['']
+    try:
+        cm = color_map(df, by='group')
+        versions = pd.unique(df['version'])
+        for name, group in df.groupby(by='group', sort=True):
+            fig.add_trace(
+                go.Bar(
+                    name=name,
+                    x=versions,
+                    y=group[op],
+                    legendgroup=1,
+                    marker={'color': cm[name]}
+                )
             )
-        )
-
+    except Exception as e:
+        print(f'bar_group_fig: {e}')
     return fig
 
 
@@ -288,13 +306,11 @@ app.layout = html.Div(children=[
     html.Div(children=[
         dcc.Graph(id='mem-group'),
         dcc.RadioItems(id='memory-group-op-radio', value='q95_value', options=radio_options),
-    ]
-    ),
+    ]),
     html.Div(children=[
         dcc.Graph(id='memory-graph'),
         dcc.RadioItems(id='memory-op-radio', value='q95_value', options=radio_options),
-    ]
-    ),
+    ]),
     html.Div(children=[
         dcc.Graph(id='cpu-graph'),
         dcc.RadioItems(id='cpu-op-radio', value='q95_value', options=radio_options)
@@ -315,10 +331,14 @@ app.layout = html.Div(children=[
     Input(component_id='memory-group-op-radio', component_property='value')
 )
 def mem_group(op):
-    df_mem = get_mem_metrics()
-    y_max = pad_range(get_max_bar_height(df_mem))
-    return bar_group_fig(df=df_mem, op=op, y_max=y_max, group='node', title='test grouping', tick_suffix='Gb',
-                         y_title='memory', x_title='OCP Version')
+    try:
+        df_mem = get_mem_metrics()
+        y_max = pad_range(get_max_bar_height(df_mem))
+        trim_and_group(df_mem, op)
+        return bar_group_fig(df=df_mem, op=op, y_max=y_max, title='test grouping', tick_suffix='Gb',
+                             y_title='memory', x_title='OCP Version')
+    except Exception as e:
+        print(f'mem_group: got exception type {type(e)}:\n{e}')
 
 
 @app.callback(
@@ -326,11 +346,15 @@ def mem_group(op):
     Input(component_id='memory-op-radio', component_property='value')
 )
 def mem_response(op):
-    df_mem = get_mem_metrics()
-    y_max = pad_range(get_max_bar_height(df_mem))
-    df_mem = trim_and_group(df_mem, op=op)
-    return bar_fig(df=df_mem, op=op, y_max=y_max, title='Total memory consumed', suffix='Gb', y_title='Memory (Gb)',
-                   x_title='OCP Version')
+    try:
+        df_mem = get_mem_metrics()
+        y_max = pad_range(get_max_bar_height(df_mem))
+        df_mem = trim_and_group(df_mem, op=op)
+        return bar_fig(df=df_mem, op=op, y_max=y_max, title='Net Memory Usage By Version', suffix='Gb',
+                       y_title='Memory (Gb)',
+                       x_title='OCP Version')
+    except Exception as e:
+        print(f'mem_response: got exception type {type(e)}:\n{e}')
 
 
 @app.callback(
@@ -338,11 +362,14 @@ def mem_response(op):
     Input(component_id='cpu-op-radio', component_property='value')
 )
 def cpu_response(op):
-    df_cpu = get_cpu_metrics()
-    y_max = pad_range(get_max_bar_height(df_cpu))
-    df_cpu = trim_and_group(df_cpu, op)
-    return bar_fig(df_cpu, op, y_max, title='Cluster CPU Time by OCP Version', suffix='Hrs',
-                   y_title='Net CPU Time in Hours', x_title='OCP Versions', legend_title='')
+    try:
+        df_cpu = get_cpu_metrics()
+        y_max = pad_range(get_max_bar_height(df_cpu))
+        df_cpu = trim_and_group(df_cpu, op)
+        return bar_fig(df_cpu, op, y_max, title='CPU % by OCP Version', suffix='%',
+                       y_title='Net CPU Time in Hours', x_title='OCP Versions', legend_title='')
+    except Exception as e:
+        print(f'cpu_response: got exception type {type(e)}:\n{e}')
 
 
 @app.callback(
@@ -350,33 +377,30 @@ def cpu_response(op):
     Input(component_id='mem-line-input', component_property='value')
 )
 def mem_line_response(op):
-    df_mem = get_mem_metrics()
-    df_mem = trim_and_group(df_mem, op)
-    y_max = pad_range(df_mem['max_value'].max())
-    return line_fig(df=df_mem, op=op, y_max=y_max, tick_suffix='Gb', title='Memory Usage Trends by OCP Version',
-                    y_title='Net Memory Consumed in Gigabytes', x_title='OCP Version')
+    try:
+        df_mem = get_mem_metrics()
+        df_mem = trim_and_group(df_mem, op)
+        y_max = pad_range(df_mem['max_value'].max())
+        return line_fig(df=df_mem, op=op, y_max=y_max, tick_suffix='Gb', title='Memory Trends by Version',
+                        y_title='Net Memory Consumed in Gigabytes', x_title='OCP Version')
+    except Exception as e:
+        print(f'mem_line_response: got exception type {type(e)}:\n{e}')
 
 
 @app.callback(
     Output(component_id='cpu-line', component_property='figure'),
     Input(component_id='cpu-line-input', component_property='value')
 )
-def mem_line_response(op):
+def cpu_line_response(op):
     try:
         df_mem = get_cpu_metrics()
         df_mem = trim_and_group(df_mem, op)
         y_max = pad_range(df_mem['max_value'].max())
+        return line_fig(df=df_mem, op=op, y_max=y_max, tick_suffix='%', title='CPU % Trends by Version',
+                        y_title='Net CPU Time in Hours', x_title='OCP Version')
     except Exception as e:
-        print(e)
-        pass
-    return line_fig(df=df_mem, op=op, y_max=y_max, tick_suffix='Hrs', title='CPU Time Trends by OCP Version',
-                    y_title='Net CPU Time in Hours', x_title='OCP Version')
+        print(f'cpu_line_response: got exception type {type(e)}:\n{e}')
 
 
 if __name__ == '__main__':
     app.run_server(debug=True, port=8050, host='0.0.0.0')
-
-# Graph ideas
-# Top 5 offenders
-# by instance groupings
-# group operators and workloads
