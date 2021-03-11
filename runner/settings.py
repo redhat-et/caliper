@@ -33,7 +33,9 @@ if _env_file == '':
     print('cannot find .env file')
     quit(1)
 
-MAX_WAIT_SECONDS = 60 * 10  # time to allow the cluster to stabilize before gather metrics
+CLUSTER_INIT_BUFFER_SECONDS = 20 * 60
+TEST_RANGE_SECONDS = 10 * 60  # time to allow the cluster to stabilize before gather metrics
+MAX_WAIT_SECONDS = CLUSTER_INIT_BUFFER_SECONDS + TEST_RANGE_SECONDS
 REPO_ROOT = path.realpath(path.join(path.dirname(__file__), path.pardir))
 CLUSTER_WORKDIR = path.join(REPO_ROOT, '_clusters')
 HOST_PLATFORM = get_platform()

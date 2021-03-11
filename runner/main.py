@@ -32,7 +32,7 @@ def parse_args_install_config(args=argparse.Namespace()):
 
 def prom_top_command(kubeconfig='', version=''):
     cmd = []
-    args = [f'--postgres', '--ocp-version', f'{str(version)}', '--range', f'{str(s.MAX_WAIT_SECONDS)}s']
+    args = [f'--postgres', '--ocp-version', f'{str(version)}', '--range', f'{str(s.TEST_RANGE_SECONDS)}s']
     if s.PROM_TOP_SOURCE == 1:
         cmd = [f'docker', 'run', '--network', 'build_postgres', '--rm', '-v', f'{kubeconfig}:/root/.kube/config',
                '--env-file', f'{s.DOTENV}', '-e', 'PGHOST=postgres', 'quay.io/jcope/prom-top:latest']
@@ -244,9 +244,11 @@ def main():
         print(f'error creating cluster:\ncmd: {output.args}\nerr:{output.stderr}')
         quit(1)
 
-    print(f'Waiting {s.MAX_WAIT_SECONDS / 60}min to generate enough data')
-    time.sleep(s.MAX_WAIT_SECONDS)
+    print(f'Waiting {s.CLUSTER_INIT_BUFFER_SECONDS / 60}min to allow cluster to settle')
+    time.sleep(s.CLUSTER_INIT_BUFFER_SECONDS)
+    print(f'Waiting {s.TEST_RANGE_SECONDS / 60}min to generate a stable data set')
     print('Wait expired, gathering data')
+
     password = ''
     try:
         password = get_cluster_passwd(deploy_dir)
