@@ -32,7 +32,7 @@ type Row struct {
 	Pod       string  `db:"pod"`
 	Range     string  `db:"range"`
 	Namespace string  `db:"namespace"`
-	LabelApp  string  `db:"label_app"`
+	OwnerName  string  `db:"owner_name"`
 	Node      string  `db:"node"`
 	QueryTime string  `db:"query_time"`
 	Q95Value  float64 `db:"q95_value"`
@@ -48,7 +48,7 @@ func (r *Row) String() string {
 	r.Range,
 	r.Pod,
 	r.Namespace,
-	r.LabelApp,
+	r.OwnerName,
 	r.Node,
 	r.QueryTime,
 	r.Q95Value,
@@ -68,7 +68,7 @@ func ColumnsHeaders() []string {
 		"node",
 		"pod",
 		"namespace",
-		"label_app",
+		"owner_name",
 		"avg_value",
 		"q95_value",
 		"max_value",
@@ -82,7 +82,7 @@ func ColumnsHeaders() []string {
 const TimestampFormat = `2006-01-02 15:04:05`
 
 // Table is a hardcoded table name.  Will be replaced with dynamically set names.
-const Table = "collated_metrics"
+const Table = "caliper_metrics"
 
 const (
 	host     = "PGHOST"

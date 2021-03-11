@@ -88,17 +88,17 @@ const (
 //     T_QUANTILE
 //     T_AVERAGE
 const (
-	avgCpu  = `avg(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
-	maxCpu  = `max(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
-	minCpu  = `min(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
-	q95Cpu  = `quantile(.95, rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node)`
-	instCpu = `sum(container_cpu_usage_seconds_total{pod!=''}) by (pod, namespace, node)`
+	avgCpu  = `avg(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	maxCpu  = `max(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	minCpu  = `min(rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	q95Cpu  = `quantile(.95, rate(container_cpu_usage_seconds_total{pod!=''}[{{.Range}}])) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	instCpu = `sum(container_cpu_usage_seconds_total{pod!=''}) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
 
-	avgMem  = `avg(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node)`
-	maxMem  = `max(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node)`
-	minMem  = `min(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node)`
-	q95Mem  = `quantile(.95, container_memory_usage_bytes) by (pod, namespace, node)`
-	instMem = `container_memory_usage_bytes{pod!=''}`
+	avgMem  = `avg(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	maxMem  = `max(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	minMem  = `min(container_memory_usage_bytes{pod!=''}) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	q95Mem  = `quantile(.95, container_memory_usage_bytes{pod!=''}) by (pod, namespace, node) * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
+	instMem = `container_memory_usage_bytes{pod!=''} * on(pod) group_left(owner_name) sum by (owner_name, pod) (kube_pod_owner{owner_kind=~"ReplicaSet|DaemonSet|StatefulSet|ReplicationController"})`
 )
 
 var metrics = []string{avgCpu, maxCpu, minCpu, q95Cpu, instCpu, avgMem, maxMem, minMem, q95Mem, instMem}
@@ -107,7 +107,7 @@ type PodMetric dbhandler.Row
 
 func (p PodMetric) MarshalCSV() []byte {
 	return []byte(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,\n",
-		p.Metric, p.Range, p.Pod, p.Namespace, p.LabelApp,
+		p.Metric, p.Range, p.Pod, p.Namespace, p.OwnerName,
 		floatToString(p.Q95Value), floatToString(p.MaxValue), floatToString(p.MinValue),
 		floatToString(p.AvgValue), floatToString(p.InstValue)))
 }
@@ -117,8 +117,8 @@ func floatToString(f float64) string {
 }
 
 func (p PodMetric) String() string {
-	return fmt.Sprintf("metric => %q {Pod=%s, Namespace=%s, Node=%s, Label App=%s}: {Avg: %f, Q95: %f, Max: %f, Min: %f}",
-		p.Metric, p.Pod, p.Namespace, p.Node, p.LabelApp, p.AvgValue, p.Q95Value, p.MaxValue, p.MinValue,
+	return fmt.Sprintf("metric => %q {Pod=%s, Namespace=%s, Node=%s, Owner_Name=%s}: {Avg: %f, Q95: %f, Max: %f, Min: %f}",
+		p.Metric, p.Pod, p.Namespace, p.Node, p.OwnerName, p.AvgValue, p.Q95Value, p.MaxValue, p.MinValue,
 	)
 }
 
@@ -190,12 +190,12 @@ func top(cfg Config) (PodMetricTable, error) {
 				podMetricHashTable[id] = new(PodMetric)
 			}
 
-			labelApp, _ := sample.Metric["label_app"]
+			ownerName, _ := sample.Metric["owner_name"]
 			podMetricHashTable[id].Namespace = string(ns)
 			podMetricHashTable[id].Pod = string(pod)
 			podMetricHashTable[id].Node = string(node)
 			podMetricHashTable[id].Metric = metric
-			podMetricHashTable[id].LabelApp = string(labelApp)
+			podMetricHashTable[id].OwnerName = string(ownerName)
 			podMetricHashTable[id].Range = cfg.Range
 			podMetricHashTable[id].QueryTime = now.Format(dbhandler.TimestampFormat)
 

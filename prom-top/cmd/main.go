@@ -125,7 +125,7 @@ func streamToDatabase(metrics top.PodMetricTable) error {
 			m.Node,
 			m.Pod,
 			m.Namespace,
-			m.LabelApp,
+			m.OwnerName,
 			m.AvgValue,
 			m.Q95Value,
 			m.MaxValue,
